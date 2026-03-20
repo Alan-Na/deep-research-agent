@@ -46,43 +46,9 @@ Output:
 - Mockable adapters for each module
 - Readable MVP, easy to extend
 
-## Project structure
-
-```text
-deep_research_agent/
-├── app/
-│   ├── __init__.py
-│   ├── config.py
-│   ├── graph.py
-│   ├── llm.py
-│   ├── main.py
-│   ├── planner.py
-│   ├── prompts.py
-│   ├── routers.py
-│   ├── schemas.py
-│   ├── synthesizer.py
-│   ├── rag/
-│   │   ├── __init__.py
-│   │   └── filing_rag.py
-│   ├── tools/
-│   │   ├── __init__.py
-│   │   ├── base.py
-│   │   ├── filing.py
-│   │   ├── news.py
-│   │   ├── price.py
-│   │   └── website.py
-│   └── utils/
-│       ├── __init__.py
-│       ├── http.py
-│       ├── logging.py
-│       ├── text.py
-│       └── time.py
-├── .env.example
-├── README.md
-└── requirements.txt
-```
-
 ## Workflow
+
+![Workflow Diagram](./mermaid-diagram.png)
 
 1. **Planner node**
    - First model call
