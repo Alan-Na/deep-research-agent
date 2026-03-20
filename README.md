@@ -1,3 +1,9 @@
+# Project Name
+
+[English](README.md) | [简体中文](README_zh.md)
+
+---
+
 # Deep Research Agent (LangGraph + LangChain)
 
 A readable MVP for a **company recent-status research agent** powered by **LangGraph** for orchestration and **LangChain** for model I/O, tool-style adapters, and RAG.
