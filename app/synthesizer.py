@@ -30,7 +30,7 @@ def heuristic_final_report(
     evidence_cards: list[EvidenceCard],
     coverage_check: CoverageCheck,
 ) -> FinalReport:
-    # 中文注释：最终兜底报告，避免整个流程在综合阶段中断。
+    # 最终兜底报告，避免整个流程在综合阶段中断。
     summaries = [result.summary for result in module_results.values() if result.summary]
     text_for_scoring = " ".join(summaries)
     score = _score_text(text_for_scoring)
@@ -93,7 +93,7 @@ def synthesize_final_report(
 
     try:
         llm = get_chat_model(temperature=0.0)
-        structured_llm = llm.with_structured_output(FinalReport, method="json_schema")
+        structured_llm = llm.with_structured_output(FinalReport, method="function_calling")
         result = (prompt | structured_llm).invoke(
             {
                 "company_name": company_name,

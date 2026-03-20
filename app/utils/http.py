@@ -18,7 +18,6 @@ def build_headers(user_agent: str | None = None) -> dict[str, str]:
     headers["User-Agent"] = user_agent or settings.sec_user_agent
     return headers
 
-
 def request_json(
     url: str,
     *,

@@ -27,7 +27,7 @@ LOW_QUALITY_DOMAINS = {
 
 
 class NewsApiAdapter(NewsDataAdapter):
-    # 中文注释：使用 NewsAPI Everything 接口获取近期文章元数据。
+    # 使用 NewsAPI Everything 接口获取近期文章元数据。
     def fetch(self, company_name: str, *, from_date: str, page_size: int = 20) -> list[NewsArticleRecord]:
         settings = get_settings()
         if not settings.newsapi_key:
@@ -217,7 +217,7 @@ def run_news_module(
     try:
         raw_articles = adapter.fetch(
             company_name,
-            from_date=days_ago_iso(settings.news_days),
+            from_date=days_ago_iso(14),  # <--- 修改在这里：固定为过去 14 天
             page_size=settings.max_news_articles,
         )
         articles = _dedupe_and_sort_articles(raw_articles)

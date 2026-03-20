@@ -6,7 +6,7 @@ from functools import lru_cache
 
 from dotenv import load_dotenv
 
-# 中文注释：加载本地环境变量，便于开发调试。
+# 加载本地环境变量，便于开发调试。
 load_dotenv(override=False)
 
 
