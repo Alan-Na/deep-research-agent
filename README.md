@@ -54,7 +54,7 @@ Output:
 
 ## Workflow
 
-![Workflow Diagram](./mermaid-diagram.png)
+![Workflow Diagram](./mermaid-diagram_1.png)
 
 1. **Planner node**
    - First model call
@@ -85,29 +85,7 @@ Output:
    - Last model call
    - Uses structured evidence instead of raw crawl dumps
    - Produces validated final JSON report
-
-## Environment variables
-
-Copy `.env.example` to `.env` and fill the values:
-
-```bash
-cp .env.example .env
-```
-
-Required for best results:
-
-- `OPENAI_API_KEY`
-- `NEWSAPI_KEY`
-- `SEC_USER_AGENT`
-
-Example:
-
-```env
-OPENAI_API_KEY=...
-NEWSAPI_KEY=...
-SEC_USER_AGENT=deep-research-agent/0.1 your_email@example.com
-```
-
+  
 ## Install
 
 ```bash
@@ -200,11 +178,3 @@ For testing, inject mock adapters into:
 - Filing retrieval currently prioritizes recent SEC forms and extracts text from the filing HTML page directly.
 - Final synthesis is conservative when evidence coverage is weak.
 
-## Suggested next steps
-
-- parallelize module execution with LangGraph branching
-- add cache and retry middleware
-- add LangSmith tracing
-- swap FAISS to a persistent vector store
-- add multilingual prompts and response language control
-- add unit tests for each adapter and node
