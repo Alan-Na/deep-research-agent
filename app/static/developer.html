@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Conpany Research Agent - Developer View</title>
+    <link rel="stylesheet" href="/static/css/styles.css" />
+  </head>
+  <body data-view="developer">
+    <div class="app-shell">
+      <header class="topbar card">
+        <div>
+          <p class="eyebrow" data-i18n="appTagline">AI Company Intelligence</p>
+          <h1 class="brand-title" data-i18n="appTitle">Conpany Research Agent</h1>
+        </div>
+        <div class="topbar-actions">
+          <a class="ghost-button" href="/" data-i18n="switchUser">User View</a>
+          <label class="language-picker">
+            <span data-i18n="languageLabel">Language</span>
+            <select id="language-select" aria-label="Language selector">
+              <option value="en">English</option>
+              <option value="zh-CN">简体中文</option>
+            </select>
+          </label>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="hero card">
+          <div class="hero-copy">
+            <p class="section-kicker" data-i18n="developerKicker">Developer Console</p>
+            <h2 data-i18n="developerTitle">Inspect the raw API output and compare it with the user-friendly report.</h2>
+            <p class="hero-text" data-i18n="developerDescription">
+              This page keeps the JSON-oriented workflow for debugging and validation while the main page presents polished content for end users.
+            </p>
+          </div>
+
+          <form id="research-form" class="research-form">
+            <label for="company-name" class="field-label" data-i18n="inputLabel">Company to research</label>
+            <div class="input-row">
+              <input
+                id="company-name"
+                name="company_name"
+                type="text"
+                required
+                autocomplete="off"
+                placeholder="e.g. NVIDIA"
+              />
+              <button id="submit-button" type="submit" data-i18n="submitButton">Start Research</button>
+            </div>
+            <p id="form-hint" class="form-hint" data-i18n="developerHint">
+              The raw response JSON will be shown below for developers.
+            </p>
+          </form>
+        </section>
+
+        <section id="status-panel" class="status-panel card hidden" aria-live="polite"></section>
+
+        <section id="results-panel" class="results-panel hidden">
+          <article class="card raw-card">
+            <div class="section-header">
+              <div>
+                <p class="section-kicker" data-i18n="rawKicker">API Response</p>
+                <h2 data-i18n="rawTitle">Raw JSON Output</h2>
+              </div>
+            </div>
+            <pre id="raw-json-output" class="raw-json"></pre>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+  </body>
+</html>
