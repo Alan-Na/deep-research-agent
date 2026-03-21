@@ -7,12 +7,13 @@ from functools import lru_cache
 from dotenv import load_dotenv
 
 # 加载本地环境变量，便于开发调试。
+# 说明：所有 ChatOpenAI 调用统一复用 OPENAI_MODEL。
 load_dotenv(override=False)
 
 
 @dataclass(frozen=True)
 class Settings:
-    openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+    openai_model: str = os.getenv("OPENAI_MODEL", "gpt-5.4")
     openai_embedding_model: str = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     newsapi_key: str = os.getenv("NEWSAPI_KEY", "")
