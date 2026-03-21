@@ -67,7 +67,19 @@ pip install -r requirements.txt
 
 ```
 
-### 2. 启动项目
+### 2. 模型配置
+
+所有依赖 LLM 的分析步骤都统一复用 `OPENAI_MODEL` 这一个配置项。若你要把 planner / 官网分析 / 新闻分析 / 最终综合统一切换到另一个 OpenAI 聊天模型，只需要修改 `.env`（或 `app/config.py` 里的默认值），不需要逐个模块改代码。
+
+例如：
+
+```env
+OPENAI_MODEL=gpt-5.4
+```
+
+Embedding 模型仍然通过 `OPENAI_EMBEDDING_MODEL` 单独配置，因此切换聊天模型时不需要同步改 embedding。
+
+### 3. 启动项目
 
 你可以直接运行我们配置好的脚本一键启动：
 
@@ -81,7 +93,7 @@ uvicorn app.main:app --reload
 
 ```
 
-启动后在浏览器打开 `http://127.0.0.1:8000/docs` 即可进入 Swagger 交互式文档页面进行测试。
+启动后在浏览器打开 `http://127.0.0.1:8000/` 即可进入用户前端页面，访问 `http://127.0.0.1:8000/developer` 可进入开发者原始 JSON 页面，`http://127.0.0.1:8000/docs` 仍可进入 Swagger 文档。
 
 ## 模块适配器说明
 

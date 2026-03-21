@@ -94,6 +94,18 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+## Model configuration
+
+All LLM-backed analysis steps reuse the single `OPENAI_MODEL` setting. If you want to switch planner / website analysis / news analysis / final synthesis to another OpenAI chat model, update only `.env` (or the default in `app/config.py`) rather than editing each module separately.
+
+Example:
+
+```env
+OPENAI_MODEL=gpt-5.4
+```
+
+The embedding model is configured separately through `OPENAI_EMBEDDING_MODEL`, so changing the chat model does not require changing embeddings.
+
 ## Run API
 
 ```bash
