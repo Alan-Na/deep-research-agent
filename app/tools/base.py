@@ -21,6 +21,7 @@ class FilingDocumentRecord:
     title: str
     url: str
     text: str
+    raw_html: str | None = None
 
 
 @dataclass

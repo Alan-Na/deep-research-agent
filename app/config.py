@@ -28,6 +28,8 @@ class Settings:
     website_page_char_limit: int = int(os.getenv("WEBSITE_PAGE_CHAR_LIMIT", "6000"))
     rag_chunk_size: int = int(os.getenv("RAG_CHUNK_SIZE", "1200"))
     rag_chunk_overlap: int = int(os.getenv("RAG_CHUNK_OVERLAP", "200"))
+    filing_max_documents: int = int(os.getenv("FILING_MAX_DOCUMENTS", "4"))
+    filing_evidence_limit: int = int(os.getenv("FILING_EVIDENCE_LIMIT", "8"))
     recent_days_threshold: int = int(os.getenv("RECENT_DAYS_THRESHOLD", "120"))
     minimum_evidence_cards: int = int(os.getenv("MINIMUM_EVIDENCE_CARDS", "4"))
     final_evidence_limit: int = int(os.getenv("FINAL_EVIDENCE_LIMIT", "12"))

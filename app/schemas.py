@@ -42,6 +42,47 @@ class PlannerOutput(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
 
 
+class FilingEvidenceReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    topic: str
+    filing_type: str
+    filed_at: str
+    fiscal_period: str | None = None
+    section_type: str
+    heading: str
+    snippet: str
+    url: str | None = None
+    title: str | None = None
+
+
+class StructuredFilingFacts(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    company: str
+    ticker: str | None = None
+    filing_type: str
+    fiscal_period: str | None = None
+    filed_at: str
+    revenue: str | None = None
+    revenue_yoy: str | None = None
+    revenue_qoq: str | None = None
+    gross_margin: str | None = None
+    operating_income: str | None = None
+    net_income: str | None = None
+    eps: str | None = None
+    operating_cash_flow: str | None = None
+    free_cash_flow: str | None = None
+    capex: str | None = None
+    guidance: List[str] = Field(default_factory=list)
+    segment_performance: List[str] = Field(default_factory=list)
+    management_explanation: List[str] = Field(default_factory=list)
+    key_risks: List[str] = Field(default_factory=list)
+    unusual_items: List[str] = Field(default_factory=list)
+    evidence_references: List[FilingEvidenceReference] = Field(default_factory=list)
+    supporting_filings: List[Dict[str, str | None]] = Field(default_factory=list)
+
+
 class FilingInsights(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

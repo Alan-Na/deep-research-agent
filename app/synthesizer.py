@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from collections import Counter
 
 from langchain_core.prompts import ChatPromptTemplate
 
@@ -21,6 +20,41 @@ def _score_text(text: str) -> int:
     score = sum(1 for word in positive_words if word in lowered)
     score -= sum(1 for word in negative_words if word in lowered)
     return score
+
+
+def _filing_fact_key_points(module_result: ModuleResult) -> tuple[list[str], list[str]]:
+    structured_facts = module_result.metrics.get("structured_facts", {}) if module_result.metrics else {}
+    if not isinstance(structured_facts, dict):
+        return [], []
+
+    key_findings: list[str] = []
+    risks: list[str] = []
+
+    if structured_facts.get("revenue"):
+        finding = f"Filing revenue: {structured_facts['revenue']}"
+        if structured_facts.get("revenue_yoy"):
+            finding += f" ({structured_facts['revenue_yoy']} YoY)"
+        key_findings.append(finding)
+    if structured_facts.get("gross_margin"):
+        key_findings.append(f"Filing gross margin: {structured_facts['gross_margin']}")
+    if structured_facts.get("operating_income"):
+        key_findings.append(f"Filing operating income: {structured_facts['operating_income']}")
+    if structured_facts.get("net_income"):
+        key_findings.append(f"Filing net income: {structured_facts['net_income']}")
+    if structured_facts.get("eps"):
+        key_findings.append(f"Filing EPS: {structured_facts['eps']}")
+    if structured_facts.get("operating_cash_flow"):
+        key_findings.append(f"Operating cash flow: {structured_facts['operating_cash_flow']}")
+    if structured_facts.get("free_cash_flow"):
+        key_findings.append(f"Free cash flow: {structured_facts['free_cash_flow']}")
+    if structured_facts.get("guidance"):
+        key_findings.extend(structured_facts["guidance"][:1])
+    if structured_facts.get("unusual_items"):
+        key_findings.extend(structured_facts["unusual_items"][:1])
+    if structured_facts.get("key_risks"):
+        risks.extend(structured_facts["key_risks"][:3])
+
+    return key_findings, risks
 
 
 def heuristic_final_report(
@@ -46,10 +80,17 @@ def heuristic_final_report(
     limitations = list(coverage_check.warnings)
 
     for module_name, result in module_results.items():
+        if module_name == "filing":
+            filing_findings, filing_risks = _filing_fact_key_points(result)
+            key_findings.extend(filing_findings)
+            risks.extend(filing_risks)
+
         if result.key_points:
             key_findings.extend(result.key_points[:2])
         if result.rag_answers.get("risk_factors"):
-            risks.extend(result.rag_answers["risk_factors"][:2])
+            risk_values = result.rag_answers["risk_factors"]
+            if isinstance(risk_values, list):
+                risks.extend(risk_values[:2])
         if result.status in {"failed", "partial"} and result.warning:
             limitations.append(f"{module_name}: {result.warning}")
         if result.status == "failed" and result.error:

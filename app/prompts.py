@@ -95,6 +95,8 @@ Rules:
 - overall_sentiment must be one of: positive, neutral, negative.
 - Preserve module_results as a faithful structured summary of the inputs.
 - Keep evidence concise and high-value.
+- When filing.module_results.metrics.structured_facts is present, treat it as the highest-signal filing input.
+- Use filing evidence cards only as supporting proof, not as the primary source of judgment.
 """
 
 FINAL_SYNTHESIS_USER_PROMPT = """
