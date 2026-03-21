@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 def utc_now() -> datetime:
     # 中文注释：统一使用 UTC，便于跨数据源比较时间。
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def days_ago_iso(days: int) -> str:
@@ -24,14 +24,14 @@ def safe_parse_date(value: str | None) -> datetime | None:
         parsed = datetime.fromisoformat(candidate)
     except ValueError:
         try:
-            parsed = datetime.strptime(candidate[:10], "%Y-%m-%d").replace(tzinfo=UTC)
+            parsed = datetime.strptime(candidate[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
         except ValueError:
             return None
 
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
+        parsed = parsed.replace(tzinfo=timezone.utc)
 
-    return parsed.astimezone(UTC)
+    return parsed.astimezone(timezone.utc)
 
 
 def is_recent(date_value: str | None, threshold_days: int) -> bool:

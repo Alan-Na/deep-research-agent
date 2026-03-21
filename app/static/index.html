@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Conpany Research Agent</title>
+    <link rel="stylesheet" href="/static/css/styles.css" />
+  </head>
+  <body data-view="user">
+    <div class="app-shell">
+      <header class="topbar card">
+        <div>
+          <p class="eyebrow" data-i18n="appTagline">AI Company Intelligence</p>
+          <h1 class="brand-title" data-i18n="appTitle">Conpany Research Agent</h1>
+        </div>
+        <div class="topbar-actions">
+          <a class="ghost-button" href="/developer" data-i18n="switchDeveloper">Developer View</a>
+          <label class="language-picker">
+            <span data-i18n="languageLabel">Language</span>
+            <select id="language-select" aria-label="Language selector">
+              <option value="en">English</option>
+              <option value="zh-CN">简体中文</option>
+            </select>
+          </label>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="hero card">
+          <div class="hero-copy">
+            <p class="section-kicker" data-i18n="heroKicker">Research Workflow</p>
+            <h2 data-i18n="heroTitle">Get a clean company research summary without reading raw JSON.</h2>
+            <p class="hero-text" data-i18n="heroDescription">
+              Enter a company name and the agent will gather market, filing, website, and news signals, then turn them into a readable report.
+            </p>
+          </div>
+
+          <form id="research-form" class="research-form">
+            <label for="company-name" class="field-label" data-i18n="inputLabel">Company to research</label>
+            <div class="input-row">
+              <input
+                id="company-name"
+                name="company_name"
+                type="text"
+                required
+                autocomplete="off"
+                placeholder="e.g. NVIDIA"
+              />
+              <button id="submit-button" type="submit" data-i18n="submitButton">Start Research</button>
+            </div>
+            <p id="form-hint" class="form-hint" data-i18n="formHint">
+              Results will appear below in plain language after the research completes.
+            </p>
+          </form>
+        </section>
+
+        <section id="status-panel" class="status-panel card hidden" aria-live="polite"></section>
+
+        <section id="results-panel" class="results-panel hidden">
+          <article class="card summary-card">
+            <div class="section-header">
+              <div>
+                <p class="section-kicker" data-i18n="finalSectionKicker">Final Output</p>
+                <h2 data-i18n="finalSectionTitle">Overall Research Summary</h2>
+              </div>
+              <div id="summary-sentiment" class="sentiment-chip"></div>
+            </div>
+            <div class="summary-grid">
+              <div>
+                <p class="meta-label" data-i18n="companyLabel">Company</p>
+                <p id="summary-company" class="meta-value"></p>
+              </div>
+              <div>
+                <p class="meta-label" data-i18n="limitationsLabel">Limitations</p>
+                <ul id="summary-limitations" class="bullet-list compact-list"></ul>
+              </div>
+            </div>
+            <div class="rich-block">
+              <p class="meta-label" data-i18n="summaryLabel">Summary</p>
+              <p id="summary-text" class="body-text"></p>
+            </div>
+            <div class="column-grid">
+              <div class="subcard">
+                <h3 data-i18n="keyFindingsLabel">Key Findings</h3>
+                <ul id="summary-findings" class="bullet-list"></ul>
+              </div>
+              <div class="subcard">
+                <h3 data-i18n="risksLabel">Risks</h3>
+                <ul id="summary-risks" class="bullet-list"></ul>
+              </div>
+            </div>
+          </article>
+
+          <section class="module-grid">
+            <article class="card module-card" id="module-price">
+              <div class="section-header">
+                <div>
+                  <p class="section-kicker" data-i18n="moduleKicker">Intermediate Module</p>
+                  <h2 data-i18n="priceTitle">Price</h2>
+                </div>
+                <span class="module-status" data-module-status></span>
+              </div>
+              <p class="module-summary" data-module-summary></p>
+              <div class="metric-grid" data-module-metrics></div>
+              <div>
+                <h3 data-i18n="highlightsLabel">Highlights</h3>
+                <ul class="bullet-list" data-module-keypoints></ul>
+              </div>
+            </article>
+
+            <article class="card module-card" id="module-filing">
+              <div class="section-header">
+                <div>
+                  <p class="section-kicker" data-i18n="moduleKicker">Intermediate Module</p>
+                  <h2 data-i18n="filingTitle">Filing</h2>
+                </div>
+                <span class="module-status" data-module-status></span>
+              </div>
+              <p class="module-summary" data-module-summary></p>
+              <div class="metric-grid" data-module-metrics></div>
+              <div>
+                <h3 data-i18n="highlightsLabel">Highlights</h3>
+                <ul class="bullet-list" data-module-keypoints></ul>
+              </div>
+            </article>
+
+            <article class="card module-card" id="module-website">
+              <div class="section-header">
+                <div>
+                  <p class="section-kicker" data-i18n="moduleKicker">Intermediate Module</p>
+                  <h2 data-i18n="websiteTitle">Website</h2>
+                </div>
+                <span class="module-status" data-module-status></span>
+              </div>
+              <p class="module-summary" data-module-summary></p>
+              <div class="metric-grid" data-module-metrics></div>
+              <div>
+                <h3 data-i18n="highlightsLabel">Highlights</h3>
+                <ul class="bullet-list" data-module-keypoints></ul>
+              </div>
+            </article>
+
+            <article class="card module-card" id="module-news">
+              <div class="section-header">
+                <div>
+                  <p class="section-kicker" data-i18n="moduleKicker">Intermediate Module</p>
+                  <h2 data-i18n="newsTitle">News</h2>
+                </div>
+                <span class="module-status" data-module-status></span>
+              </div>
+              <p class="module-summary" data-module-summary></p>
+              <div class="metric-grid" data-module-metrics></div>
+              <div>
+                <h3 data-i18n="highlightsLabel">Highlights</h3>
+                <ul class="bullet-list" data-module-keypoints></ul>
+              </div>
+            </article>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+  </body>
+</html>

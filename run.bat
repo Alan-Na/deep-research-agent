@@ -1,6 +1,6 @@
 @echo off
 set PORT=8000
-set URL=http://127.0.0.1:%PORT%/docs
+set URL=http://127.0.0.1:%PORT%/
 
 echo 🚀 正在启动 Deep Research Agent (Windows 版)...
 
@@ -23,7 +23,7 @@ call .venv\Scripts\activate
 pip install -r requirements.txt
 
 :: 4. 自动打开浏览器
-echo 🌐 准备打开 API 文档页面: %URL%
+echo 🌐 准备打开前端页面: %URL%
 start %URL%
 
 :: 5. 启动服务
