@@ -1,3 +1,9 @@
+# Project Name
+
+[English](README.md) | [简体中文](README_zh.md)
+
+---
+
 # Deep Research Agent (LangGraph + LangChain)
 
 A readable MVP for a **company recent-status research agent** powered by **LangGraph** for orchestration and **LangChain** for model I/O, tool-style adapters, and RAG.
@@ -46,43 +52,9 @@ Output:
 - Mockable adapters for each module
 - Readable MVP, easy to extend
 
-## Project structure
-
-```text
-deep_research_agent/
-├── app/
-│   ├── __init__.py
-│   ├── config.py
-│   ├── graph.py
-│   ├── llm.py
-│   ├── main.py
-│   ├── planner.py
-│   ├── prompts.py
-│   ├── routers.py
-│   ├── schemas.py
-│   ├── synthesizer.py
-│   ├── rag/
-│   │   ├── __init__.py
-│   │   └── filing_rag.py
-│   ├── tools/
-│   │   ├── __init__.py
-│   │   ├── base.py
-│   │   ├── filing.py
-│   │   ├── news.py
-│   │   ├── price.py
-│   │   └── website.py
-│   └── utils/
-│       ├── __init__.py
-│       ├── http.py
-│       ├── logging.py
-│       ├── text.py
-│       └── time.py
-├── .env.example
-├── README.md
-└── requirements.txt
-```
-
 ## Workflow
+
+![Workflow Diagram](./mermaid-diagram_1.png)
 
 1. **Planner node**
    - First model call
@@ -113,29 +85,7 @@ deep_research_agent/
    - Last model call
    - Uses structured evidence instead of raw crawl dumps
    - Produces validated final JSON report
-
-## Environment variables
-
-Copy `.env.example` to `.env` and fill the values:
-
-```bash
-cp .env.example .env
-```
-
-Required for best results:
-
-- `OPENAI_API_KEY`
-- `NEWSAPI_KEY`
-- `SEC_USER_AGENT`
-
-Example:
-
-```env
-OPENAI_API_KEY=...
-NEWSAPI_KEY=...
-SEC_USER_AGENT=deep-research-agent/0.1 your_email@example.com
-```
-
+  
 ## Install
 
 ```bash
@@ -228,11 +178,3 @@ For testing, inject mock adapters into:
 - Filing retrieval currently prioritizes recent SEC forms and extracts text from the filing HTML page directly.
 - Final synthesis is conservative when evidence coverage is weak.
 
-## Suggested next steps
-
-- parallelize module execution with LangGraph branching
-- add cache and retry middleware
-- add LangSmith tracing
-- swap FAISS to a persistent vector store
-- add multilingual prompts and response language control
-- add unit tests for each adapter and node
