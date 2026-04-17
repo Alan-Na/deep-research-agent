@@ -2,114 +2,118 @@
 
 ---
 
-# 基于LangGraph + LangChain的深度调研智能Agent
+# Deep Research Platform
 
-这是一个易于阅读的**企业近况调研智能体** MVP。它使用 **LangGraph** 进行任务流编排，并利用 **LangChain** 处理模型 I/O、工具适配器以及 RAG 逻辑。
+这是一个可本地完整演示的企业研究平台，技术栈为 `FastAPI + LangGraph + PostgreSQL/pgvector + Redis + React`。
 
-## 功能逻辑
+## 升级后的能力
 
-**输入示例：**
-```json
-{
-  "company_name": "Apple"
-}
+项目已不再是单个同步接口 Demo，而是包含：
 
-```
+- 异步研究任务
+- 独立 Worker
+- PostgreSQL 持久化 jobs / reports / documents / chunks / citations / evaluations
+- Redis 队列和实时事件流
+- `price / filing / website / news` 并行执行
+- 带 citation 的最终报告
+- 质量评估分数与 warning
+- Vite + React 前端，支持实时进度、历史任务、用户视图和开发者 JSON 视图
 
-**输出示例：**
+## 系统流程
 
-```json
-{
-  "company_name": "Apple",
-  "overall_sentiment": "positive",
-  "summary": "...",
-  "key_findings": ["..."],
-  "risks": ["..."],
-  "limitations": ["..."],
-  "module_results": {
-    "price": {},
-    "filing": {},
-    "website": {},
-    "news": {}
-  },
-  "evidence": []
-}
+1. `POST /research-jobs` 创建任务并推入 Redis。
+2. `app.worker` 消费任务并执行研究 graph。
+3. Graph 顺序为：
+   - planner
+   - 并行模块执行
+   - 证据归一化
+   - 覆盖度检查
+   - 最终综合
+   - citation 绑定与评估
+4. 结果写入 PostgreSQL。
+5. 前端通过 REST API 和 `/research-jobs/{id}/events` 的 `SSE` 展示进度与结果。
 
-```
+## 主要接口
 
-## 设计目标
+- `POST /research-jobs`
+- `GET /research-jobs/{job_id}`
+- `GET /research-jobs/{job_id}/events`
+- `GET /research-jobs?limit=20`
+- `GET /reports/{report_id}`
+- `POST /analyze`
+  - 兼容旧接口
+  - 内部会创建 job，并在限定时间内等待结果，超时则返回当前 job 状态
 
-* **LangGraph 编排**：将其作为核心工作流引擎。
-* **LangChain 集成**：负责 LLM 调用、结构化输出生成以及财报 RAG 检索。
-* **严格验证**：使用 Pydantic 对 Planner 输出和最终报告进行严格验证。
-* **Fallback**：针对非上市公司、代码识别失败、缺失财报、官网爬取失败或新闻为空等情况均有容错处理。
-* **模块化适配器**：各模块适配器均可 Mock（模拟数据），方便扩展和测试。
-* **高可读性**：代码结构清晰，易于根据业务需求进行二次开发。
+## 本地运行
 
-## Workflow
-
-![Workflow Diagram](./mermaid-diagram.png)
-
-1. **规划节点**：进行首次模型调用，产出包含公司基本信息和待执行模块的结构化 JSON 计划。
-2. **程序端路由**：根据计划分发任务至 `price`、`filing`、`website` 和 `news` 模块。
-3. **证据标准化**：每个模块都会产生标准化的证据卡片 (Evidence Cards)。
-4. **覆盖度检查**：检查模块运行数量、证据时效性及充分性，记录潜在的警告信息。
-5. **最终合成**：最后一次模型调用，基于结构化证据（而非原始网页抓取内容）产出经过验证的最终 JSON 报告。
-
-## 安装与运行
-
-### 1. 安装环境
+### 1. 准备环境变量
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows 用户请使用 .venv\Scripts\activate
+cp .env.example .env
+```
+
+建议至少填写：
+
+- `OPENAI_API_KEY`
+- `NEWSAPI_KEY`
+- `SEC_USER_AGENT`，并带上有效邮箱
+
+### 2. Docker 一键启动
+
+```bash
+docker compose up --build
+```
+
+启动后：
+
+- API：`http://localhost:8000`
+- 前端：`http://localhost:3000`
+- Swagger：`http://localhost:8000/docs`
+
+### 3. 非 Docker 方式
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-
+npm --prefix frontend install
 ```
 
-### 2. 模型配置
-
-所有依赖 LLM 的分析步骤都统一复用 `OPENAI_MODEL` 这一个配置项。若你要把 planner / 官网分析 / 新闻分析 / 最终综合统一切换到另一个 OpenAI 聊天模型，只需要修改 `.env`（或 `app/config.py` 里的默认值），不需要逐个模块改代码。
-
-例如：
-
-```env
-OPENAI_MODEL=gpt-5.4
-```
-
-Embedding 模型仍然通过 `OPENAI_EMBEDDING_MODEL` 单独配置，因此切换聊天模型时不需要同步改 embedding。
-
-### 3. 启动项目
-
-你可以直接运行我们配置好的脚本一键启动：
-
-* **Windows 用户**：双击 `run.bat`。
-* **Mac/Linux 用户**：在终端执行 `sh run.sh`。
-
-或者手动启动 API 服务：
+准备好本地 Postgres 和 Redis 后再执行：
 
 ```bash
 uvicorn app.main:app --reload
-
+python -m app.worker
+npm --prefix frontend run dev
 ```
 
-启动后在浏览器打开 `http://127.0.0.1:8000/` 即可进入用户前端页面，访问 `http://127.0.0.1:8000/developer` 可进入开发者原始 JSON 页面，`http://127.0.0.1:8000/docs` 仍可进入 Swagger 文档。
+## 数据表
 
-## 模块适配器说明
+- `research_jobs`
+- `module_runs`
+- `reports`
+- `documents`
+- `chunks`
+- `citations`
+- `evaluation_runs`
 
-每个模块都采用适配器驱动模式，方便后期更换数据源：
+## 降级与容错
 
-* **股价**：`YFinancePriceAdapter`。
-* **财报**：`SecEdgarAdapter`。
-* **官网爬虫**：`RequestsWebsiteCrawler`。
-* **新闻**：`NewsApiAdapter`。
+- 没有 `OPENAI_API_KEY` 时，planner / synthesis / embedding 会走启发式降级
+- 没有 `NEWSAPI_KEY` 时，news 模块返回 `partial`
+- 单模块失败不会中断整单
+- 最终报告会尽量给每条结论绑定 citation
+- 评估结果会输出 groundedness / freshness / coverage
 
-## 当前 MVP 的局限与折衷
+## 检查命令
 
-* **线性图结构**：为了提高逻辑可读性，Graph 目前是线性排列的。如果需要并行执行，建议改为基于 `Send` 的分支结构。
-* **官网发现**：采用尽力而为的公开搜索回退策略。
-* **财报提取**：优先处理最新的 SEC 表单并直接解析 HTML 文本内容。
-* **综合评估**：在证据覆盖不足时，最终合成器会倾向于给出保守的评估结果。
-```
-
+```bash
+source .venv/bin/activate
+pytest -q
+python - <<'PY'
+import app.main
+import app.worker
+print("imports ok")
+PY
+npm --prefix frontend run build
 ```

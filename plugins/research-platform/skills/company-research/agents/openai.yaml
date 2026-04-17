@@ -1,0 +1,8 @@
+interface:
+  display_name: "Company Research"
+  short_description: "Grounded company analysis via the local research platform"
+  brand_color: "#0F766E"
+  default_prompt: "Use $company-research to create a research job, inspect the report, and summarize the cited findings."
+
+policy:
+  allow_implicit_invocation: true

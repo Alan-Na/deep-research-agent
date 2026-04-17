@@ -1,0 +1,20 @@
+{
+  "name": "deep-research-agent-local",
+  "interface": {
+    "displayName": "Deep Research Agent Local"
+  },
+  "plugins": [
+    {
+      "name": "research-platform",
+      "source": {
+        "source": "local",
+        "path": "./plugins/research-platform"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

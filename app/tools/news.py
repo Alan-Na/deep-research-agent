@@ -33,16 +33,28 @@ class NewsApiAdapter(NewsDataAdapter):
         if not settings.newsapi_key:
             raise RuntimeError("NEWSAPI_KEY is not configured.")
 
-        payload = request_json(
-            "https://newsapi.org/v2/everything",
-            params={
-                "q": company_name,
-                "from": from_date,
-                "sortBy": "publishedAt",
-                "pageSize": min(page_size, 100),
-            },
-            headers={"X-Api-Key": settings.newsapi_key, **build_headers()},
-        )
+        params = {
+            "q": company_name,
+            "from": from_date,
+            "sortBy": "publishedAt",
+            "pageSize": min(page_size, 100),
+        }
+        try:
+            payload = request_json(
+                "https://newsapi.org/v2/everything",
+                params=params,
+                headers={"X-Api-Key": settings.newsapi_key, **build_headers()},
+            )
+        except Exception:
+            fallback_from_date = days_ago_iso(14)
+            if from_date != fallback_from_date:
+                payload = request_json(
+                    "https://newsapi.org/v2/everything",
+                    params={**params, "from": fallback_from_date},
+                    headers={"X-Api-Key": settings.newsapi_key, **build_headers()},
+                )
+            else:
+                raise
 
         records: list[NewsArticleRecord] = []
         for article in payload.get("articles", []):
@@ -217,7 +229,7 @@ def run_news_module(
     try:
         raw_articles = adapter.fetch(
             company_name,
-            from_date=days_ago_iso(14),  # <--- 修改在这里：固定为过去 14 天
+            from_date=days_ago_iso(settings.news_days),
             page_size=settings.max_news_articles,
         )
         articles = _dedupe_and_sort_articles(raw_articles)

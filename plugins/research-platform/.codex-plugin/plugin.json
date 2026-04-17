@@ -1,0 +1,40 @@
+{
+  "name": "research-platform",
+  "version": "0.1.0",
+  "description": "Local company research plugin with a company-analysis skill and Research Job MCP server.",
+  "author": {
+    "name": "Naxineng",
+    "email": "naxn10248@outlook.com",
+    "url": "https://github.com/naxineng"
+  },
+  "homepage": "http://localhost:3000",
+  "repository": "https://github.com/naxineng/deep-research-agent",
+  "license": "MIT",
+  "keywords": [
+    "company-research",
+    "agent",
+    "mcp",
+    "citations",
+    "deep-research"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Research Platform",
+    "shortDescription": "Company research workflow and Research Job MCP",
+    "longDescription": "Adds a company-research skill for grounded operating analysis and a Research Job MCP server that can create jobs, poll status, fetch reports, and search citations from the local deep research platform.",
+    "developerName": "Naxineng",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "http://localhost:3000",
+    "privacyPolicyURL": "https://openai.com/policies/row-privacy-policy/",
+    "termsOfServiceURL": "https://openai.com/policies/row-terms-of-use/",
+    "defaultPrompt": [
+      "Use company research workflow on NVIDIA",
+      "Create and inspect a research job report",
+      "Search citations for a company finding"
+    ],
+    "brandColor": "#0F766E",
+    "screenshots": []
+  }
+}

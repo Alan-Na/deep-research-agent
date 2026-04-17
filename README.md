@@ -2,189 +2,119 @@
 
 ---
 
-# Deep Research Agent (LangGraph + LangChain)
+# Deep Research Platform
 
-A readable MVP for a **company recent-status research agent** powered by **LangGraph** for orchestration and **LangChain** for model I/O, tool-style adapters, and RAG.
+A local-demo-ready company research platform built with `FastAPI`, `LangGraph`, `PostgreSQL/pgvector`, `Redis`, and `React`.
 
-## What it does
+## What changed
 
-Input:
+This repo is no longer a single synchronous demo endpoint. It now includes:
 
-```json
-{
-  "company_name": "Apple"
-}
-```
+- asynchronous research jobs
+- a worker process
+- PostgreSQL persistence for jobs, reports, documents, chunks, citations, and evaluations
+- Redis-backed job queue and live event streaming
+- parallel research execution across `price`, `filing`, `website`, and `news`
+- citation-grounded final reports with evaluation scores
+- a Vite + React frontend for live progress, history, user report view, and developer JSON view
 
-Output:
+## Architecture
 
-```json
-{
-  "company_name": "Apple",
-  "overall_sentiment": "positive",
-  "summary": "...",
-  "key_findings": ["..."],
-  "risks": ["..."],
-  "limitations": ["..."],
-  "module_results": {
-    "price": {},
-    "filing": {},
-    "website": {},
-    "news": {}
-  },
-  "evidence": []
-}
-```
+1. `POST /research-jobs` creates a job and pushes it to Redis.
+2. `app.worker` consumes queued jobs and runs the research graph.
+3. The graph performs:
+   - planner
+   - parallel module fan-out
+   - evidence normalization
+   - coverage check
+   - final synthesis
+   - citation binding + evaluation
+4. Results are stored in PostgreSQL.
+5. The frontend consumes REST APIs plus `SSE` from `/research-jobs/{id}/events`.
 
-## Design goals
+## APIs
 
-- LangGraph as the main workflow engine
-- LangChain for LLM calls, structured output, and filing RAG
-- Strict Pydantic validation for planner output and final output
-- Graceful fallback for:
-  - non-public companies
-  - ticker resolution failure
-  - missing SEC filings
-  - website discovery/crawl failure
-  - empty news
-- Mockable adapters for each module
-- Readable MVP, easy to extend
+- `POST /research-jobs`
+- `GET /research-jobs/{job_id}`
+- `GET /research-jobs/{job_id}/events`
+- `GET /research-jobs?limit=20`
+- `GET /reports/{report_id}`
+- `POST /analyze`
+  - compatibility endpoint
+  - creates a job and blocks for a bounded time before returning either the final report or the current job status
 
-## Workflow
+## Local run
 
-![Workflow Diagram](./mermaid-diagram_1.png)
-
-1. **Planner node**
-   - First model call
-   - Produces structured JSON plan:
-     - `company_name`
-     - `is_public`
-     - `market`
-     - `selected_modules`
-     - `rationale`
-     - `confidence`
-
-2. **Program-side routing**
-   - `price`
-   - `filing`
-   - `website`
-   - `news`
-
-3. **Evidence normalization**
-   - Every module emits standardized evidence cards
-
-4. **Coverage check**
-   - checks module count
-   - checks recent evidence
-   - checks evidence sufficiency
-   - records warnings
-
-5. **Final synthesizer**
-   - Last model call
-   - Uses structured evidence instead of raw crawl dumps
-   - Produces validated final JSON report
-  
-## Install
+### 1. Configure environment
 
 ```bash
-python -m venv .venv
+cp .env.example .env
+```
+
+Fill at least:
+
+- `OPENAI_API_KEY` for LLM-based planning/synthesis/embeddings
+- `NEWSAPI_KEY` for live news retrieval
+- `SEC_USER_AGENT` with a valid contact email
+
+### 2. Start the full stack
+
+```bash
+docker compose up --build
+```
+
+Services:
+
+- API: `http://localhost:8000`
+- Frontend: `http://localhost:3000`
+- Swagger: `http://localhost:8000/docs`
+
+### 3. Run without Docker
+
+```bash
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+npm --prefix frontend install
 ```
 
-## Model configuration
-
-All LLM-backed analysis steps reuse the single `OPENAI_MODEL` setting. If you want to switch planner / website analysis / news analysis / final synthesis to another OpenAI chat model, update only `.env` (or the default in `app/config.py`) rather than editing each module separately.
-
-Example:
-
-```env
-OPENAI_MODEL=gpt-5.4
-```
-
-The embedding model is configured separately through `OPENAI_EMBEDDING_MODEL`, so changing the chat model does not require changing embeddings.
-
-## Run API
+Start dependencies locally, then run:
 
 ```bash
 uvicorn app.main:app --reload
+python -m app.worker
+npm --prefix frontend run dev
 ```
 
-Open:
+## Storage model
 
-- `http://127.0.0.1:8000/docs`
+PostgreSQL tables:
 
-## API example
+- `research_jobs`
+- `module_runs`
+- `reports`
+- `documents`
+- `chunks`
+- `citations`
+- `evaluation_runs`
 
-### Request
+## Quality and fallback behavior
+
+- Missing `OPENAI_API_KEY`: planner/synthesis fall back to heuristic mode
+- Missing `NEWSAPI_KEY`: news module degrades to `partial`
+- Module failures do not abort the whole job
+- Final reports attach citations where evidence can be matched
+- Evaluation scores track groundedness, freshness, and coverage
+
+## Tests and checks
 
 ```bash
-curl -X POST http://127.0.0.1:8000/analyze   -H "Content-Type: application/json"   -d '{"company_name":"NVIDIA"}'
+source .venv/bin/activate
+pytest -q
+python - <<'PY'
+import app.main
+import app.worker
+print("imports ok")
+PY
+npm --prefix frontend run build
 ```
-
-### Response shape
-
-```json
-{
-  "company_name": "NVIDIA",
-  "overall_sentiment": "positive",
-  "summary": "....",
-  "key_findings": ["..."],
-  "risks": ["..."],
-  "limitations": ["..."],
-  "module_results": {
-    "price": {
-      "module": "price",
-      "applicable": true,
-      "summary": "...",
-      "metrics": {},
-      "rag_answers": {},
-      "key_points": [],
-      "event_timeline": [],
-      "evidence": [],
-      "status": "success",
-      "reason": null,
-      "warning": null,
-      "error": null
-    }
-  },
-  "evidence": [
-    {
-      "module": "news",
-      "source_type": "news_article",
-      "title": "...",
-      "date": "2026-03-18T10:00:00Z",
-      "snippet": "...",
-      "url": "https://..."
-    }
-  ]
-}
-```
-
-## Notes on adapters
-
-Each module is intentionally adapter-driven so you can replace the data source later:
-
-- `YFinancePriceAdapter`
-- `AksharePriceAdapter`
-- `SecEdgarAdapter`
-- `DefaultWebsiteDiscoveryAdapter`
-- `RequestsWebsiteCrawler`
-- `NewsApiAdapter`
-
-For testing, inject mock adapters into:
-
-- `run_price_module(...)`
-- `run_filing_module(...)`
-- `run_website_module(...)`
-- `run_news_module(...)`
-
-## Current MVP trade-offs
-
-- The graph is intentionally linear for readability.
-  - Nodes still perform program-side routing and can skip themselves gracefully.
-  - If you want parallel fan-out later, replace the fixed chain with `Send`-based branching.
-- Website discovery uses a best-effort public search fallback.
-- Filing retrieval currently prioritizes recent SEC forms and extracts text from the filing HTML page directly.
-- Final synthesis is conservative when evidence coverage is weak.
-

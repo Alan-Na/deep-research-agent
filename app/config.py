@@ -6,8 +6,6 @@ from functools import lru_cache
 
 from dotenv import load_dotenv
 
-# 加载本地环境变量，便于开发调试。
-# 说明：所有 ChatOpenAI 调用统一复用 OPENAI_MODEL。
 load_dotenv(override=False)
 
 
@@ -19,11 +17,23 @@ class Settings:
     newsapi_key: str = os.getenv("NEWSAPI_KEY", "")
     sec_user_agent: str = os.getenv(
         "SEC_USER_AGENT",
-        "deep-research-agent/0.1 research@example.com",
+        "deep-research-agent/0.2 research@example.com",
     )
+
+    database_url: str = os.getenv(
+        "DATABASE_URL",
+        "postgresql+psycopg://postgres:postgres@localhost:5432/deep_research_agent",
+    )
+    reset_database_on_startup: bool = os.getenv("RESET_DATABASE_ON_STARTUP", "false").lower() in {"1", "true", "yes"}
+    redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    redis_queue_name: str = os.getenv("REDIS_QUEUE_NAME", "investment_jobs")
+    event_channel_prefix: str = os.getenv("EVENT_CHANNEL_PREFIX", "investment_job_events")
+
     request_timeout: int = int(os.getenv("REQUEST_TIMEOUT", "20"))
+    agent_max_steps: int = int(os.getenv("AGENT_MAX_STEPS", "4"))
+    agent_timeout_seconds: int = int(os.getenv("AGENT_TIMEOUT_SECONDS", "45"))
     price_lookback_days: int = int(os.getenv("PRICE_LOOKBACK_DAYS", "90"))
-    news_days: int = int(os.getenv("NEWS_DAYS", "90"))
+    news_days: int = int(os.getenv("NEWS_DAYS", "14"))
     max_news_articles: int = int(os.getenv("MAX_NEWS_ARTICLES", "20"))
     max_website_pages: int = int(os.getenv("MAX_WEBSITE_PAGES", "4"))
     website_page_char_limit: int = int(os.getenv("WEBSITE_PAGE_CHAR_LIMIT", "6000"))
@@ -34,10 +44,12 @@ class Settings:
     recent_days_threshold: int = int(os.getenv("RECENT_DAYS_THRESHOLD", "120"))
     minimum_evidence_cards: int = int(os.getenv("MINIMUM_EVIDENCE_CARDS", "4"))
     final_evidence_limit: int = int(os.getenv("FINAL_EVIDENCE_LIMIT", "12"))
+    retrieval_top_k: int = int(os.getenv("RETRIEVAL_TOP_K", "8"))
+    blocking_analyze_timeout_seconds: int = int(os.getenv("BLOCKING_ANALYZE_TIMEOUT_SECONDS", "90"))
+    worker_poll_timeout_seconds: int = int(os.getenv("WORKER_POLL_TIMEOUT_SECONDS", "5"))
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
 
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    # 中文注释：通过缓存保证全局只初始化一次配置。
     return Settings()

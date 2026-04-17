@@ -153,7 +153,12 @@ def synthesize_final_report(
             }
         )
         validated = FinalReport.model_validate(result)
-        return validated
+        return validated.model_copy(
+            update={
+                "module_results": module_results,
+                "evidence": evidence_cards[: get_settings().final_evidence_limit],
+            }
+        )
     except Exception:
         logger.exception("Final synthesizer failed. Falling back to heuristic report.")
         return heuristic_final_report(company_name, planner_output, module_results, evidence_cards, coverage_check)

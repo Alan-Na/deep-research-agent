@@ -1,45 +1,49 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, TypedDict
+from typing import Any, Callable, Dict, List, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
-ModuleName = Literal["price", "filing", "website", "news"]
-MarketName = Literal["A_SHARE", "US", "NONE", "UNKNOWN"]
+MarketName = Literal["A_SHARE", "US", "UNKNOWN"]
 SentimentName = Literal["positive", "neutral", "negative"]
-ModuleStatus = Literal["success", "partial", "skipped", "failed"]
+AgentStatus = Literal["success", "partial", "skipped", "failed"]
+JobStatus = Literal["queued", "running", "partial", "succeeded", "failed"]
+StanceName = Literal["bullish", "neutral", "bearish"]
+EventCategory = Literal[
+    "earnings",
+    "product_release",
+    "regulation",
+    "lawsuit",
+    "partnership",
+    "layoff",
+    "financing",
+    "accident",
+]
+EventHorizon = Literal["short_term_noise", "mid_term_catalyst"]
 
 
-class EvidenceCard(BaseModel):
+class InstrumentInfo(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    module: ModuleName
-    source_type: str
-    title: str
-    date: str | None = None
-    snippet: str
-    url: str | None = None
+    symbol: str | None = None
+    display_name: str | None = None
+    exchange: str | None = None
+    market: MarketName = "UNKNOWN"
+    website_url: str | None = None
+    industry: str | None = None
+    listed_at: str | None = None
+    notes: List[str] = Field(default_factory=list)
 
 
-class TimelineEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    date: str | None = None
-    title: str
-    sentiment: SentimentName
-    summary: str
-    url: str | None = None
-
-
-class PlannerOutput(BaseModel):
+class ResearchBrief(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     company_name: str
-    is_public: bool | Literal["unknown"]
-    market: MarketName
-    selected_modules: List[ModuleName]
-    rationale: str
-    confidence: float = Field(ge=0.0, le=1.0)
+    market: MarketName = "UNKNOWN"
+    query: str
+    instrument: InstrumentInfo = Field(default_factory=InstrumentInfo)
+    priority_agents: List[str] = Field(default_factory=list)
+    briefing_notes: List[str] = Field(default_factory=list)
 
 
 class FilingEvidenceReference(BaseModel):
@@ -49,9 +53,9 @@ class FilingEvidenceReference(BaseModel):
     filing_type: str
     filed_at: str
     fiscal_period: str | None = None
-    section_type: str
-    heading: str
-    snippet: str
+    section_type: str = "unknown"
+    heading: str = ""
+    snippet: str = ""
     url: str | None = None
     title: str | None = None
 
@@ -61,9 +65,9 @@ class StructuredFilingFacts(BaseModel):
 
     company: str
     ticker: str | None = None
-    filing_type: str
+    filing_type: str = ""
     fiscal_period: str | None = None
-    filed_at: str
+    filed_at: str = ""
     revenue: str | None = None
     revenue_yoy: str | None = None
     revenue_qoq: str | None = None
@@ -87,10 +91,10 @@ class FilingInsights(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     summary: str
-    operating_performance: str
+    operating_performance: str = ""
     risk_factors: List[str] = Field(default_factory=list)
-    management_commentary: str
-    guidance_changes: str
+    management_commentary: str = ""
+    guidance_changes: str = ""
 
 
 class WebsiteInsights(BaseModel):
@@ -107,74 +111,283 @@ class NewsInsights(BaseModel):
     positive_events: List[str] = Field(default_factory=list)
     neutral_events: List[str] = Field(default_factory=list)
     negative_events: List[str] = Field(default_factory=list)
-    dominant_narrative: str
-    event_timeline: List[TimelineEvent] = Field(default_factory=list)
+    dominant_narrative: str = ""
+    event_timeline: List[EventItem] = Field(default_factory=list)
 
 
-class CompanyIdentifiers(BaseModel):
+class EvidenceItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    ticker: str | None = None
-    cik: str | None = None
-    website_url: str | None = None
-    exchange: str | None = None
-    notes: List[str] = Field(default_factory=list)
+    agent_name: str
+    source_type: str
+    category: str
+    title: str
+    snippet: str
+    date: str | None = None
+    url: str | None = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
-class ModuleResult(BaseModel):
+class EventItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    module: ModuleName
-    applicable: bool
+    title: str
+    category: EventCategory
+    horizon: EventHorizon
+    sentiment: SentimentName
+    impact_score: float = Field(ge=0.0, le=1.0)
+    confidence_score: float = Field(ge=0.0, le=1.0)
+    date: str | None = None
     summary: str
-    metrics: Dict[str, Any] = Field(default_factory=dict)
-    rag_answers: Dict[str, Any] = Field(default_factory=dict)
-    key_points: List[str] = Field(default_factory=list)
-    event_timeline: List[TimelineEvent] = Field(default_factory=list)
-    evidence: List[EvidenceCard] = Field(default_factory=list)
-    status: ModuleStatus = "success"
-    reason: str | None = None
-    warning: str | None = None
-    error: str | None = None
+    source_ids: List[str] = Field(default_factory=list)
 
 
-class CoverageCheck(BaseModel):
+class MarketReturns(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    valid_module_count: int
-    evidence_count: int
-    has_recent_evidence: bool
-    enough_evidence: bool
-    failed_or_skipped_modules: List[str] = Field(default_factory=list)
+    one_day_pct: float | None = None
+    one_week_pct: float | None = None
+    one_month_pct: float | None = None
+    three_month_pct: float | None = None
+
+
+class VolumeSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    latest: float | None = None
+    average_20d: float | None = None
+    turnover_rate: float | None = None
+
+
+class VolatilitySnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    realized_20d_pct: float | None = None
+    high_52w: float | None = None
+    low_52w: float | None = None
+
+
+class ValuationSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    market_cap: float | None = None
+    pe_ttm: float | None = None
+    pb: float | None = None
+    eps_ttm: float | None = None
+    book_value_per_share: float | None = None
+
+
+class MarketSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    last_price: float | None = None
+    returns: MarketReturns = Field(default_factory=MarketReturns)
+    volume: VolumeSnapshot = Field(default_factory=VolumeSnapshot)
+    volatility: VolatilitySnapshot = Field(default_factory=VolatilitySnapshot)
+    turnover: Dict[str, Any] = Field(default_factory=dict)
+    valuation: ValuationSnapshot = Field(default_factory=ValuationSnapshot)
+    as_of: str | None = None
+    provider: str | None = None
+
+
+class AgentObservation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    capability: str
+    summary: str
+    payload: Dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    agent_name: str
+    applicable: bool
+    status: AgentStatus = "success"
+    summary: str
+    key_points: List[str] = Field(default_factory=list)
+    metrics: Dict[str, Any] = Field(default_factory=dict)
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    events: List[EventItem] = Field(default_factory=list)
+    evidence: List[EvidenceItem] = Field(default_factory=list)
+    observations: List[AgentObservation] = Field(default_factory=list)
+    capabilities_used: List[str] = Field(default_factory=list)
+    current_step: str | None = None
+    tool_calls_count: int = 0
+    warning: str | None = None
+    reason: str | None = None
+    error: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    duration_ms: int | None = None
+    citations_count: int = 0
+
+
+class Citation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    claim: str
+    agent_name: str
+    source_type: str
+    category: str
+    title: str
+    snippet: str
+    url: str | None = None
+    date: str | None = None
+    score: float = Field(default=0.0, ge=0.0)
+    chunk_id: str | None = None
+    document_id: str | None = None
+
+
+class CriticSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    citation_coverage_score: float = Field(ge=0.0, le=1.0)
+    freshness_score: float = Field(ge=0.0, le=1.0)
+    consistency_score: float = Field(ge=0.0, le=1.0)
+    duplicate_event_bias_score: float = Field(ge=0.0, le=1.0)
+    stance_supported: bool
     warnings: List[str] = Field(default_factory=list)
 
 
-class FinalReport(BaseModel):
+class InvestmentMemo(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     company_name: str
-    overall_sentiment: SentimentName
-    summary: str
-    key_findings: List[str] = Field(default_factory=list)
-    risks: List[str] = Field(default_factory=list)
+    market: MarketName
+    instrument: InstrumentInfo = Field(default_factory=InstrumentInfo)
+    stance: StanceName
+    stance_confidence: float = Field(ge=0.0, le=1.0)
+    thesis: str
+    bull_case: List[str] = Field(default_factory=list)
+    bear_case: List[str] = Field(default_factory=list)
+    key_catalysts: List[str] = Field(default_factory=list)
+    key_risks: List[str] = Field(default_factory=list)
+    valuation_view: str
+    market_snapshot: MarketSnapshot | None = None
+    watch_items: List[str] = Field(default_factory=list)
     limitations: List[str] = Field(default_factory=list)
-    module_results: Dict[str, ModuleResult] = Field(default_factory=dict)
-    evidence: List[EvidenceCard] = Field(default_factory=list)
+    agent_outputs: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    events: List[EventItem] = Field(default_factory=list)
+    citations: List[Citation] = Field(default_factory=list)
+    critic_summary: CriticSummary | None = None
 
 
-class AnalyzeRequest(BaseModel):
+class InvestmentJobRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     company_name: str = Field(min_length=1)
 
 
-class ResearchState(TypedDict, total=False):
+class InvestmentJobCreateResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: str
+    status: JobStatus
+    created_at: str
+
+
+class AgentRunStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    agent_name: str
+    status: JobStatus | AgentStatus
+    current_step: str | None = None
+    tool_calls_count: int = 0
+    summary: str | None = None
+    warning: str | None = None
+    error: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    duration_ms: int | None = None
+
+
+class InvestmentJobStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: str
     company_name: str
-    planner_output: PlannerOutput
-    identifiers: CompanyIdentifiers
-    module_results: Dict[str, ModuleResult]
-    evidence_cards: List[EvidenceCard]
-    coverage_check: CoverageCheck
+    market: MarketName = "UNKNOWN"
+    status: JobStatus
+    research_brief: ResearchBrief | None = None
+    agent_runs: List[AgentRunStatus] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    memo_id: str | None = None
+    created_at: str
+    updated_at: str
+    started_at: str | None = None
+    finished_at: str | None = None
+
+
+class InvestmentJobListItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: str
+    company_name: str
+    market: MarketName = "UNKNOWN"
+    status: JobStatus
+    created_at: str
+    memo_id: str | None = None
+
+
+class InvestmentMemoResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    memo_id: str
+    job_id: str
+    memo: InvestmentMemo
+
+
+class EvidenceResponseItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    agent_name: str
+    source_type: str
+    category: str
+    title: str
+    url: str | None = None
+    published_at: str | None = None
+    content: str
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class EvidenceSearchResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: str
+    items: List[EvidenceResponseItem] = Field(default_factory=list)
+
+
+class InvestmentState(TypedDict, total=False):
+    company_name: str
+    research_brief: ResearchBrief
+    agent_results: Dict[str, AgentResult]
+    evidence_items: List[EvidenceItem]
+    event_items: List[EventItem]
     warnings: List[str]
     errors: List[str]
-    final_report: FinalReport
+    coverage: Dict[str, Any]
+    retrieval_chunks: List[Any]
+    memo: InvestmentMemo
+    progress_callback: Callable[[dict[str, Any]], None]
+
+
+# Compatibility aliases for the deprecated v1 API shape.
+ModuleName = str
+ModuleStatus = AgentStatus
+AnalyzeRequest = InvestmentJobRequest
+EvidenceCard = EvidenceItem
+TimelineEvent = EventItem
+PlannerOutput = ResearchBrief
+CompanyIdentifiers = InstrumentInfo
+ModuleResult = AgentResult
+CoverageCheck = Dict[str, Any]
+EvaluationSummary = CriticSummary
+FinalReport = InvestmentMemo
+ResearchJobCreateResponse = InvestmentJobCreateResponse
+ModuleRunStatus = AgentRunStatus
+ResearchJobStatusResponse = InvestmentJobStatusResponse
+ResearchJobListItem = InvestmentJobListItem
+ReportResponse = InvestmentMemoResponse
+ResearchState = InvestmentState

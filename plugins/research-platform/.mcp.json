@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "research-job-mcp": {
+      "command": "python3",
+      "args": ["./plugins/research-platform/scripts/research_job_mcp.py"],
+      "env": {
+        "RESEARCH_PLATFORM_API_BASE_URL": "http://localhost:8000",
+        "RESEARCH_JOB_MCP_TRANSPORT": "stdio"
+      }
+    },
+    "market-data-mcp": {
+      "command": "python3",
+      "args": ["./plugins/research-platform/scripts/market_data_mcp.py"],
+      "env": {
+        "MARKET_DATA_MCP_TRANSPORT": "stdio"
+      }
+    }
+  }
+}
