@@ -12,10 +12,17 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.db import init_db
-from app.schemas import InvestmentJobRequest, InvestmentMemoResponse, InvestmentJobCreateResponse, InvestmentJobStatusResponse
+from app.schemas import (
+    InvestmentJobCreateResponse,
+    InvestmentJobRequest,
+    InvestmentJobStatusResponse,
+    InvestmentMemoResponse,
+    MarketOhlcvResponse,
+)
 from app.services.job_service import (
     check_dependencies_health,
     create_investment_job,
+    get_job_market_ohlcv_response,
     get_investment_job_status,
     get_investment_memo_response,
     get_job_memo,
@@ -128,6 +135,14 @@ def get_job_evidence(job_id: str, agent: str | None = Query(default=None), categ
     return evidence.model_dump()
 
 
+@app.get("/investment-jobs/{job_id}/ohlcv", response_model=MarketOhlcvResponse)
+def get_job_ohlcv(job_id: str) -> MarketOhlcvResponse:
+    response = get_job_market_ohlcv_response(job_id)
+    if response is None:
+        raise HTTPException(status_code=404, detail="OHLCV data not found for the investment job.")
+    return response
+
+
 @app.post("/analyze")
 def analyze_company(request: InvestmentJobRequest) -> dict[str, Any]:
     response = create_investment_job(request.company_name)
@@ -188,6 +203,11 @@ def get_jobs_legacy(limit: int = 20) -> list[dict[str, Any]]:
 @app.get("/research-jobs/{job_id}/events", deprecated=True)
 def stream_job_events_legacy(job_id: str) -> StreamingResponse:
     return stream_job_events(job_id)
+
+
+@app.get("/research-jobs/{job_id}/ohlcv", deprecated=True)
+def get_job_ohlcv_legacy(job_id: str) -> dict[str, Any]:
+    return get_job_ohlcv(job_id).model_dump()
 
 
 @app.get("/reports/{report_id}", deprecated=True)

@@ -1,16 +1,85 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
-body {
-  margin: 0;
-  font-family: "Inter", "Segoe UI", sans-serif;
-  color: #10233f;
-  background:
-    radial-gradient(circle at top left, rgba(15, 118, 110, 0.14), transparent 24%),
-    linear-gradient(180deg, #f4f7fb 0%, #eef4fb 100%);
+/* ── Design tokens ─────────────────────────────────── */
+:root {
+  /* User page palette — warm editorial */
+  --cream:       #f9f7f3;
+  --cream-dark:  #f0ece4;
+  --ink:         #1a1d2e;
+  --ink-light:   #2e3250;
+  --gold:        #b8873a;
+  --gold-light:  #d4a85c;
+  --positive:    #1a6b45;
+  --positive-bg: #eaf4ef;
+  --negative:    #9b2335;
+  --negative-bg: #fdf0f2;
+  --neutral:     #4a4d62;
+  --neutral-bg:  #f2f2f6;
+  --amber:       #8a5c1a;
+  --amber-bg:    #fdf5e8;
+  --muted:       #6e6c72;
+  --border:      #e0dcd5;
+  --white:       #ffffff;
+  --shadow-sm:   0 1px 4px rgba(26,29,46,.06);
+  --shadow-md:   0 4px 16px rgba(26,29,46,.08);
+
+  /* Dev page palette — dark terminal */
+  --dev-bg:      #0d1117;
+  --dev-panel:   #161b22;
+  --dev-card:    #21262d;
+  --dev-border:  #30363d;
+  --dev-text:    #c9d1d9;
+  --dev-muted:   #8b949e;
+  --dev-green:   #3fb950;
+  --dev-blue:    #58a6ff;
+  --dev-amber:   #d29922;
+  --dev-red:     #f85149;
+  --dev-purple:  #bc8cff;
+
+  /* Fonts */
+  --serif:  'Playfair Display', Georgia, 'Times New Roman', serif;
+  --sans:   'Source Sans 3', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --mono:   'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
 }
 
-#root {
-  min-height: 100vh;
+/* ── Reset ─────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { -webkit-font-smoothing: antialiased; scroll-behavior: smooth; }
+
+body {
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--ink);
+  background: var(--cream);
+}
+
+a { color: inherit; text-decoration: none; }
+button { cursor: pointer; border: none; background: none; font-family: inherit; }
+input { font-family: inherit; }
+
+/* ── Animations ────────────────────────────────────── */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+.fade-up { animation: fadeUp .4s ease both; }
+.fade-up-1 { animation: fadeUp .4s .08s ease both; }
+.fade-up-2 { animation: fadeUp .4s .16s ease both; }
+.fade-up-3 { animation: fadeUp .4s .24s ease both; }
+.fade-up-4 { animation: fadeUp .4s .32s ease both; }
+
+.skeleton {
+  background: linear-gradient(90deg, var(--cream-dark) 25%, var(--border) 50%, var(--cream-dark) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite;
+  border-radius: 4px;
 }

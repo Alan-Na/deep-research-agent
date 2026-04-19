@@ -18,6 +18,7 @@ from app.schemas import (
     VolatilitySnapshot,
     VolumeSnapshot,
 )
+from app.services.market_ohlcv import load_or_refresh_ohlcv
 from app.tools.price import AksharePriceAdapter, YFinancePriceAdapter
 from app.utils.logging import get_logger
 from app.utils.text import truncate_text
@@ -172,14 +173,21 @@ def _load_price_history(
     if not instrument.symbol:
         return {"summary": "Skipped price history because instrument symbol is unavailable."}
 
-    history = transport.get_history(instrument.symbol, instrument.market, get_settings().price_lookback_days)
+    ohlcv_result = load_or_refresh_ohlcv(
+        symbol=instrument.symbol,
+        market=instrument.market,
+        display_name=instrument.display_name or brief.company_name,
+        exchange=instrument.exchange,
+        lookback_days=get_settings().price_lookback_days,
+    )
+    history = ohlcv_result.frame
     if history is None or history.empty:
         return {"summary": "Price history returned no rows."}
 
-    close_col = _pick_column(history, ["收盘", "Close", "close"])
-    volume_col = _pick_column(history, ["成交量", "Volume", "volume"])
-    high_col = _pick_column(history, ["最高", "High", "high"])
-    low_col = _pick_column(history, ["最低", "Low", "low"])
+    close_col = _pick_column(history, ["close", "收盘", "Close"])
+    volume_col = _pick_column(history, ["volume", "成交量", "Volume"])
+    high_col = _pick_column(history, ["high", "最高", "High"])
+    low_col = _pick_column(history, ["low", "最低", "Low"])
 
     closes = history[close_col].astype(float)
     returns = closes.pct_change().dropna()
@@ -203,7 +211,7 @@ def _load_price_history(
             high_52w=round(float(history[high_col].tail(min(252, len(history))).max()), 4) if high_col else None,
             low_52w=round(float(history[low_col].tail(min(252, len(history))).min()), 4) if low_col else None,
         ),
-        as_of=str(history.iloc[-1].get("日期") or history.index[-1])[:10],
+        as_of=str(history.iloc[-1].get("date") or history.index[-1])[:10],
         provider="market-data-mcp",
     )
     evidence = EvidenceItem(
@@ -217,12 +225,19 @@ def _load_price_history(
             f"20日波动率 {snapshot.volatility.realized_20d_pct}; 20日均量 {snapshot.volume.average_20d}.",
             300,
         ),
-        metadata={"symbol": instrument.symbol, "provider": snapshot.provider},
+        metadata={"symbol": instrument.symbol, "provider": snapshot.provider, "cache_status": ohlcv_result.series.cache_status},
     )
     return {
         "summary": f"Loaded price history for {instrument.symbol} with {len(history)} rows.",
-        "payload": {"market_snapshot": snapshot.model_dump()},
-        "metrics": {"trading_days": len(history)},
+        "payload": {
+            "market_snapshot": snapshot.model_dump(),
+            "ohlcv_series": ohlcv_result.series.model_dump(),
+        },
+        "metrics": {
+            "trading_days": len(history),
+            "cache_status": ohlcv_result.series.cache_status,
+            "fetched_rows": ohlcv_result.fetched_rows,
+        },
         "evidence": [evidence.model_dump()],
     }
 

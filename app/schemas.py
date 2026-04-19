@@ -190,6 +190,32 @@ class MarketSnapshot(BaseModel):
     provider: str | None = None
 
 
+class OhlcvBar(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    date: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float | None = None
+    amount: float | None = None
+
+
+class OhlcvSeries(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str
+    market: MarketName
+    exchange: str | None = None
+    display_name: str | None = None
+    adjustment: str = "raw"
+    provider: str = "market-data-mcp"
+    cache_status: Literal["hit", "refresh", "miss"] = "miss"
+    cached_until: str | None = None
+    bars: List[OhlcvBar] = Field(default_factory=list)
+
+
 class AgentObservation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -357,6 +383,16 @@ class EvidenceSearchResponse(BaseModel):
 
     job_id: str
     items: List[EvidenceResponseItem] = Field(default_factory=list)
+
+
+class MarketOhlcvResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: str
+    company_name: str
+    market: MarketName
+    instrument: InstrumentInfo = Field(default_factory=InstrumentInfo)
+    series: OhlcvSeries
 
 
 class InvestmentState(TypedDict, total=False):

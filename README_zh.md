@@ -2,47 +2,80 @@
 
 ---
 
-# Deep Research Platform
+# Investment Research Multi-Agent Platform
 
-这是一个可本地完整演示的企业研究平台，技术栈为 `FastAPI + LangGraph + PostgreSQL/pgvector + Redis + React`。
+这是一个专注投资研究的多 Agent 项目，技术栈为 `FastAPI + LangGraph + PostgreSQL/pgvector + Redis + React`。
 
-## 升级后的能力
+主要交付物是上市公司 投资分析，并且首版优先支持 A 股。
 
-项目已不再是单个同步接口 Demo，而是包含：
+## 当前定位
 
-- 异步研究任务
-- 独立 Worker
-- PostgreSQL 持久化 jobs / reports / documents / chunks / citations / evaluations
-- Redis 队列和实时事件流
-- `price / filing / website / news` 并行执行
-- 带 citation 的最终报告
-- 质量评估分数与 warning
-- Vite + React 前端，支持实时进度、历史任务、用户视图和开发者 JSON 视图
+- 输出投资备忘录，而不是泛化公司摘要
+- 每个 agent 内部采用有界 `ReAct`
+- 一等 agent 固定为：
+  - `market`
+  - `filing`
+  - `web_intel`
+  - `news_risk`
+  - `critic_output`
+- 使用 Redis 队列做异步任务，SSE 做实时进度流
+- 使用 PostgreSQL 持久化 jobs、agent runs、memos、evidence documents、evidence chunks、citations、critic runs、event records
+- 提供 Vite + React 前端，用于任务创建、实时 trace、memo 展示、citation explorer 和 developer JSON 视图
 
-## 系统流程
+## 系统架构
 
-1. `POST /research-jobs` 创建任务并推入 Redis。
-2. `app.worker` 消费任务并执行研究 graph。
-3. Graph 顺序为：
-   - planner
-   - 并行模块执行
-   - 证据归一化
-   - 覆盖度检查
-   - 最终综合
-   - citation 绑定与评估
-4. 结果写入 PostgreSQL。
-5. 前端通过 REST API 和 `/research-jobs/{id}/events` 的 `SSE` 展示进度与结果。
+顶层编排由 `LangGraph` 负责。
 
-## 主要接口
+执行流程如下：
 
-- `POST /research-jobs`
-- `GET /research-jobs/{job_id}`
-- `GET /research-jobs/{job_id}/events`
-- `GET /research-jobs?limit=20`
-- `GET /reports/{report_id}`
-- `POST /analyze`
-  - 兼容旧接口
-  - 内部会创建 job，并在限定时间内等待结果，超时则返回当前 job 状态
+1. `POST /investment-jobs` 创建异步任务并推入 Redis。
+2. `app.worker` 消费任务并启动 graph。
+3. Graph 依次执行：
+   - `intake_brief`
+   - `parallel_research`
+   - `evidence_index`
+   - `critic_output`
+   - `finalize`
+4. 前四个研究 agent 并行执行：
+   - `Market Agent`
+     - 负责价格、收益率、成交量、波动率、估值快照
+     - 通过本地 `market-data-mcp` 抽象访问市场数据
+   - `Filing Agent`
+     - 负责公告/财报发现与结构化抽取
+     - 以 `A 股` 披露路径为主，SEC 路径为辅
+   - `Web Intelligence Agent`
+     - 负责官网、IR 页面、公司定位、产品和业务线索
+   - `News/Risk Agent`
+     - 负责新闻抓取、去重、聚类、事件分类、事件周期判断、impact/confidence 打分
+5. `Critic & Output Agent` 只消费共享证据和前面 agent 的输出，它负责检查：
+   - 立场是否被证据支撑
+   - citation 覆盖率
+   - 证据新鲜度
+   - 跨 agent 一致性
+   - 是否存在重复新闻导致的偏置
+6. 最终结果保存为 `InvestmentMemo`。
+
+## 最终输出
+
+系统最终输出包含：
+
+- `stance`：`bullish / neutral / bearish`
+- `stance_confidence`
+- `thesis`
+- `bull_case`
+- `bear_case`
+- `key_catalysts`
+- `key_risks`
+- `valuation_view`
+- `market_snapshot`
+- `watch_items`
+- `limitations`
+- `agent_outputs`
+- `events`
+- `citations`
+- `critic_summary`
+
+如果证据不足，critic agent 会优先把立场降级到 `neutral`，并明确输出 limitations，而不是给出过强结论。
 
 ## 本地运行
 
@@ -56,7 +89,9 @@ cp .env.example .env
 
 - `OPENAI_API_KEY`
 - `NEWSAPI_KEY`
-- `SEC_USER_AGENT`，并带上有效邮箱
+- `SEC_USER_AGENT`
+
+在 Docker 模式下，PostgreSQL 和 Redis 由 `docker-compose.yml` 直接提供。
 
 ### 2. Docker 一键启动
 
@@ -70,6 +105,12 @@ docker compose up --build
 - 前端：`http://localhost:3000`
 - Swagger：`http://localhost:8000/docs`
 
+注意：
+
+- 当前 `docker-compose.yml` 给 API 设置了 `RESET_DATABASE_ON_STARTUP=true`
+- 也就是说容器启动时会重建数据库 schema
+- 本地 Docker 环境更适合演示，不适合作为持久化生产环境
+
 ### 3. 非 Docker 方式
 
 ```bash
@@ -79,7 +120,7 @@ pip install -r requirements.txt
 npm --prefix frontend install
 ```
 
-准备好本地 Postgres 和 Redis 后再执行：
+然后准备本地 PostgreSQL 和 Redis，再执行：
 
 ```bash
 uvicorn app.main:app --reload
@@ -87,30 +128,48 @@ python -m app.worker
 npm --prefix frontend run dev
 ```
 
-## 数据表
+非 Docker 模式下，你需要自己提供带 `pgvector` 的 PostgreSQL 和一个 Redis 实例。
 
-- `research_jobs`
-- `module_runs`
-- `reports`
-- `documents`
-- `chunks`
-- `citations`
-- `evaluation_runs`
+## 前端说明
+
+当前前端更像“可运行参考实现”，不是长期设计层。
+
+如果你准备自己重写 UI，建议保留这三层接口边界：
+
+- `frontend/src/lib/contracts.ts`
+- `frontend/src/lib/api.ts`
+- `frontend/src/lib/events.ts`
+
+其余 React 页面结构可以自由替换，而不影响后端行为。
 
 ## 降级与容错
 
-- 没有 `OPENAI_API_KEY` 时，planner / synthesis / embedding 会走启发式降级
-- 没有 `NEWSAPI_KEY` 时，news 模块返回 `partial`
-- 单模块失败不会中断整单
-- 最终报告会尽量给每条结论绑定 citation
-- 评估结果会输出 groundedness / freshness / coverage
+- 缺少 `OPENAI_API_KEY`
+  - 规划、综合、部分排序步骤会降级为启发式行为
+- 缺少 `NEWSAPI_KEY`
+  - `news_risk` 可能返回 `partial`
+- 单个 agent 失败不会直接中断整个 job
+- 只要仍有足够可用证据，系统会尽量返回 `partial` 而不是 `failed`
+- 在证据可匹配时，系统会给结论绑定 citation
+- critic 当前会输出：
+  - citation coverage
+  - freshness
+  - consistency
+  - duplicate-event bias
+
+## 当前限制
+
+- v1 主要针对 `A 股` 优化
+- 市场数据和新闻数据依赖的上游源有时不稳定
+- 即使 graph 主链成功，外部数据源异常仍可能导致任务最终落为 `partial`
+- `POST /analyze` 是兼容接口，不代表完整的异步 job 语义
 
 ## 检查命令
 
 ```bash
 source .venv/bin/activate
 pytest -q
-python - <<'PY'
+python3 - <<'PY'
 import app.main
 import app.worker
 print("imports ok")

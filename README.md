@@ -2,74 +2,116 @@
 
 ---
 
-# Deep Research Platform
+# Investment Research Multi-Agent Platform
 
-A local-demo-ready company research platform built with `FastAPI`, `LangGraph`, `PostgreSQL/pgvector`, `Redis`, and `React`.
+This is a multi-agent project focused on investment research, built with the `FastAPI + LangGraph + PostgreSQL/pgvector + Redis + React` tech stack.
 
-## What changed
+The main deliverable is investment analysis of public companies, with the first version primarily supporting A-shares.
 
-This repo is no longer a single synchronous demo endpoint. It now includes:
+## Current Positioning
 
-- asynchronous research jobs
-- a worker process
-- PostgreSQL persistence for jobs, reports, documents, chunks, citations, and evaluations
-- Redis-backed job queue and live event streaming
-- parallel research execution across `price`, `filing`, `website`, and `news`
-- citation-grounded final reports with evaluation scores
-- a Vite + React frontend for live progress, history, user report view, and developer JSON view
+  - Outputs investment memos instead of generic company summaries
+  - Bounded `ReAct` execution inside each agent
+  - First-class agents are fixed to:
+      - `market`
+      - `filing`
+      - `web_intel`
+      - `news_risk`
+      - `critic_output`
+  - Uses Redis queues for async jobs and SSE for real-time progress streaming
+  - Uses PostgreSQL to persist jobs, agent runs, memos, evidence documents, evidence chunks, citations, critic runs, and event records
+  - Provides a Vite + React frontend for task creation, real-time traces, memo display, citation explorer, and developer JSON view
 
-## Architecture
+## System Architecture
 
-1. `POST /research-jobs` creates a job and pushes it to Redis.
-2. `app.worker` consumes queued jobs and runs the research graph.
-3. The graph performs:
-   - planner
-   - parallel module fan-out
-   - evidence normalization
-   - coverage check
-   - final synthesis
-   - citation binding + evaluation
-4. Results are stored in PostgreSQL.
-5. The frontend consumes REST APIs plus `SSE` from `/research-jobs/{id}/events`.
+Top-level orchestration is handled by `LangGraph`.
 
-## APIs
+The execution flow is as follows:
 
-- `POST /research-jobs`
-- `GET /research-jobs/{job_id}`
-- `GET /research-jobs/{job_id}/events`
-- `GET /research-jobs?limit=20`
-- `GET /reports/{report_id}`
-- `POST /analyze`
-  - compatibility endpoint
-  - creates a job and blocks for a bounded time before returning either the final report or the current job status
+1.  `POST /investment-jobs` creates an async job and pushes it to Redis.
+2.  `app.worker` consumes the job and starts the graph.
+3.  The graph runs sequentially:
+      - `intake_brief`
+      - `parallel_research`
+      - `evidence_index`
+      - `critic_output`
+      - `finalize`
+4.  The first four research agents run in parallel:
+      - `Market Agent`
+          - Responsible for price, yield, trading volume, volatility, and valuation snapshots
+          - Accesses market data through the local `market-data-mcp` abstraction
+      - `Filing Agent`
+          - Responsible for disclosure/financial report discovery and structured extraction
+          - Primary path is `A-share` disclosure, SEC path is secondary
+      - `Web Intelligence Agent`
+          - Responsible for official websites, IR pages, company positioning, product and business clues
+      - `News/Risk Agent`
+          - Responsible for article fetching, deduplication, clustering, event classification, event cycle determination, and impact/confidence scoring
+5.  The `Critic & Output Agent` only consumes shared evidence and previous agent outputs. It checks:
+      - Whether the stance is supported by evidence
+      - Citation coverage
+      - Freshness of evidence
+      - Cross-agent consistency
+      - Whether there is bias caused by duplicate news
+6.  The final result is saved as an `InvestmentMemo`.
 
-## Local run
+## Final Output
 
-### 1. Configure environment
+The final system output includes:
+
+  - `stance`: `bullish / neutral / bearish`
+  - `stance_confidence`
+  - `thesis`
+  - `bull_case`
+  - `bear_case`
+  - `key_catalysts`
+  - `key_risks`
+  - `valuation_view`
+  - `market_snapshot`
+  - `watch_items`
+  - `limitations`
+  - `agent_outputs`
+  - `events`
+  - `citations`
+  - `critic_summary`
+
+If evidence is insufficient, the critic agent will prioritize downgrading the stance to `neutral` and explicitly output limitations, rather than giving overly strong conclusions.
+
+## Local Run
+
+### 1\. Prepare Environment Variables
 
 ```bash
 cp .env.example .env
 ```
 
-Fill at least:
+Recommended to at least fill in:
 
-- `OPENAI_API_KEY` for LLM-based planning/synthesis/embeddings
-- `NEWSAPI_KEY` for live news retrieval
-- `SEC_USER_AGENT` with a valid contact email
+  - `OPENAI_API_KEY`
+  - `NEWSAPI_KEY`
+  - `SEC_USER_AGENT`
 
-### 2. Start the full stack
+In Docker mode, PostgreSQL and Redis are directly provided by `docker-compose.yml`.
+
+### 2\. Docker One-Click Startup
 
 ```bash
 docker compose up --build
 ```
 
-Services:
+After starting:
 
-- API: `http://localhost:8000`
-- Frontend: `http://localhost:3000`
-- Swagger: `http://localhost:8000/docs`
+  - API: `http://localhost:8000`
+  - Frontend: `http://localhost:3000`
+  - Swagger: `http://localhost:8000/docs`
 
-### 3. Run without Docker
+Note:
+
+  - The current `docker-compose.yml` sets `RESET_DATABASE_ON_STARTUP=true` for the API
+  - This means the database schema will be recreated upon container startup
+  - The local Docker environment is better suited for demonstrations, not as a persistent production environment
+
+### 3\. Non-Docker Method
 
 ```bash
 python3 -m venv .venv
@@ -78,7 +120,7 @@ pip install -r requirements.txt
 npm --prefix frontend install
 ```
 
-Start dependencies locally, then run:
+Then prepare local PostgreSQL and Redis, and run:
 
 ```bash
 uvicorn app.main:app --reload
@@ -86,32 +128,48 @@ python -m app.worker
 npm --prefix frontend run dev
 ```
 
-## Storage model
+In non-Docker mode, you need to provide your own PostgreSQL with `pgvector` and a Redis instance.
 
-PostgreSQL tables:
+## Frontend Notes
 
-- `research_jobs`
-- `module_runs`
-- `reports`
-- `documents`
-- `chunks`
-- `citations`
-- `evaluation_runs`
+The current frontend is more of a "runnable reference implementation" than a long-term design layer.
 
-## Quality and fallback behavior
+If you plan to rewrite the UI yourself, it is recommended to keep these three interface boundaries:
 
-- Missing `OPENAI_API_KEY`: planner/synthesis fall back to heuristic mode
-- Missing `NEWSAPI_KEY`: news module degrades to `partial`
-- Module failures do not abort the whole job
-- Final reports attach citations where evidence can be matched
-- Evaluation scores track groundedness, freshness, and coverage
+  - `frontend/src/lib/contracts.ts`
+  - `frontend/src/lib/api.ts`
+  - `frontend/src/lib/events.ts`
 
-## Tests and checks
+The rest of the React page structure can be freely replaced without affecting backend behavior.
+
+## Degradation and Fault Tolerance
+
+  - Missing `OPENAI_API_KEY`
+      - Planning, synthesis, and some sorting steps will degrade to heuristic behavior
+  - Missing `NEWSAPI_KEY`
+      - `news_risk` may return `partial`
+  - A single agent failure will not directly abort the entire job
+  - As long as there is enough usable evidence, the system will try its best to return `partial` instead of `failed`
+  - When evidence can be matched, the system will bind citations to the conclusions
+  - The critic currently outputs:
+      - citation coverage
+      - freshness
+      - consistency
+      - duplicate-event bias
+
+## Current Limitations
+
+  - v1 is primarily optimized for `A-shares`
+  - Upstream sources relied upon for market and news data are sometimes unstable
+  - Even if the main graph chain succeeds, external data source anomalies may still cause the task to ultimately result in `partial`
+  - `POST /analyze` is a compatibility endpoint and does not represent the full async job semantics
+
+## Check Commands
 
 ```bash
 source .venv/bin/activate
 pytest -q
-python - <<'PY'
+python3 - <<'PY'
 import app.main
 import app.worker
 print("imports ok")

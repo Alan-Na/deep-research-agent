@@ -29,7 +29,9 @@ from app.schemas import (
     InvestmentJobStatusResponse,
     InvestmentMemo,
     InvestmentMemoResponse,
+    MarketOhlcvResponse,
 )
+from app.services.market_ohlcv import get_job_market_ohlcv
 from app.services.redis_queue import enqueue_job, get_redis_client, publish_job_event
 from app.utils.logging import get_logger
 
@@ -206,6 +208,20 @@ def search_job_evidence(job_id: str, agent_name: str | None = None, category: st
                 for row in rows
             ],
         )
+
+
+def get_job_market_ohlcv_response(job_id: str) -> MarketOhlcvResponse | None:
+    payload = get_job_market_ohlcv(job_id)
+    if payload is None:
+        return None
+    company_name, instrument, series = payload
+    return MarketOhlcvResponse(
+        job_id=job_id,
+        company_name=company_name,
+        market=instrument.market,
+        instrument=instrument,
+        series=series,
+    )
 
 
 def wait_for_job_completion(job_id: str, timeout_seconds: int) -> InvestmentJobStatusResponse | None:
