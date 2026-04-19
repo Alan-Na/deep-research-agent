@@ -8,6 +8,8 @@ This is a multi-agent project focused on investment research, built with the `Fa
 
 The main deliverable is investment analysis of public companies, with the first version primarily supporting A-shares.
 
+![Workflow](pipeline_flowchart.svg)
+
 ## Current Positioning
 
   - Outputs investment memos instead of generic company summaries
