@@ -4,9 +4,7 @@
 
 # Investment Research Multi-Agent Platform
 
-这是一个专注投资研究的多 Agent 项目，技术栈为 `FastAPI + LangGraph + PostgreSQL/pgvector + Redis + React`。
-
-主要交付物是上市公司 投资分析，并且首版优先支持 A 股。
+这是一个专注投资研究的多 Agent 项目，主要应用是上市公司的投资分析，并且首版优先支持 A 股。
 
 ![Workflow](pipeline_flowchart.svg)
 
