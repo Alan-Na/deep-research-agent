@@ -4,9 +4,7 @@
 
 # Investment Research Multi-Agent Platform
 
-This is a multi-agent project focused on investment research, built with the `FastAPI + LangGraph + PostgreSQL/pgvector + Redis + React` tech stack.
-
-The main deliverable is investment analysis of public companies, with the first version primarily supporting A-shares.
+This is a multi-agent project focused on investment research, the main deliverable is investment analysis of public companies, with the first version primarily supporting A-shares.
 
 ![Workflow](pipeline_flowchart.svg)
 
