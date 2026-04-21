@@ -132,18 +132,6 @@ npm --prefix frontend run dev
 
 In non-Docker mode, you need to provide your own PostgreSQL with `pgvector` and a Redis instance.
 
-## Frontend Notes
-
-The current frontend is more of a "runnable reference implementation" than a long-term design layer.
-
-If you plan to rewrite the UI yourself, it is recommended to keep these three interface boundaries:
-
-  - `frontend/src/lib/contracts.ts`
-  - `frontend/src/lib/api.ts`
-  - `frontend/src/lib/events.ts`
-
-The rest of the React page structure can be freely replaced without affecting backend behavior.
-
 ## Degradation and Fault Tolerance
 
   - Missing `OPENAI_API_KEY`
