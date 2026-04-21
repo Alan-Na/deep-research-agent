@@ -87,12 +87,6 @@
 cp .env.example .env
 ```
 
-建议至少填写：
-
-- `OPENAI_API_KEY`
-- `NEWSAPI_KEY`
-- `SEC_USER_AGENT`
-
 在 Docker 模式下，PostgreSQL 和 Redis 由 `docker-compose.yml` 直接提供。
 
 ### 2. Docker 一键启动
@@ -131,18 +125,6 @@ npm --prefix frontend run dev
 ```
 
 非 Docker 模式下，你需要自己提供带 `pgvector` 的 PostgreSQL 和一个 Redis 实例。
-
-## 前端说明
-
-当前前端更像“可运行参考实现”，不是长期设计层。
-
-如果你准备自己重写 UI，建议保留这三层接口边界：
-
-- `frontend/src/lib/contracts.ts`
-- `frontend/src/lib/api.ts`
-- `frontend/src/lib/events.ts`
-
-其余 React 页面结构可以自由替换，而不影响后端行为。
 
 ## 降级与容错
 
