@@ -4,7 +4,7 @@
 
 # Investment Research Multi-Agent Platform
 
-这是一个专注投资研究的多 Agent 项目，主要应用是上市公司的投资分析，并且首版优先支持 A 股。
+这是一个基于LangGraph开发的多 Agent 项目，主要应用是上市公司股票的投资分析，并且首版优先支持 A 股。
 
 ![Workflow](pipeline_flowchart.svg)
 
