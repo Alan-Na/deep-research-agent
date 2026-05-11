@@ -50,6 +50,6 @@ def build_research_brief(company_name: str) -> ResearchBrief:
         market=market,  # type: ignore[arg-type]
         query=company_name,
         instrument=instrument,
-        priority_agents=["market", "filing", "web_intel", "news_risk", "critic_output"],
+        priority_agents=["market", "filing", "message_intel", "critic_output"],
         briefing_notes=notes,
     )

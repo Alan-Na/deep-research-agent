@@ -15,8 +15,7 @@
 - 一等 agent 固定为：
   - `market`
   - `filing`
-  - `web_intel`
-  - `news_risk`
+  - `message_intel`
   - `critic_output`
 - 使用 Redis 队列做异步任务，SSE 做实时进度流
 - 使用 PostgreSQL 持久化 jobs、agent runs、memos、evidence documents、evidence chunks、citations、critic runs、event records
@@ -36,17 +35,17 @@
    - `evidence_index`
    - `critic_output`
    - `finalize`
-4. 前四个研究 agent 并行执行：
+4. 三个研究 agent 并行执行：
    - `Market Agent`
      - 负责价格、收益率、成交量、波动率、估值快照
      - 通过本地 `market-data-mcp` 抽象访问市场数据
    - `Filing Agent`
-     - 负责公告/财报发现与结构化抽取
+     - 负责财报发现、三表核心数据抽取、关键财务指标计算和财务风险 flag 识别
      - 以 `A 股` 披露路径为主，SEC 路径为辅
-   - `Web Intelligence Agent`
-     - 负责官网、IR 页面、公司定位、产品和业务线索
-   - `News/Risk Agent`
-     - 负责新闻抓取、去重、聚类、事件分类、事件周期判断、impact/confidence 打分
+   - `消息面 Agent`
+     - 整合官网、IR 页面、公司定位、产品和业务线索
+     - 执行确定性新闻流水线：实体 aliases、公司相关性过滤、SimHash 聚类、规则事件分类、关键数字抽取、可选 FinBERT-Chinese 情感分析和模板摘要
+     - 输出结构化 `news_signal_analysis`，同时映射到现有 critic、retrieval 和 event records 需要的事件接口
 5. `Critic & Output Agent` 只消费共享证据和前面 agent 的输出，它负责检查：
    - 立场是否被证据支撑
    - citation 覆盖率
@@ -147,7 +146,9 @@ npm --prefix frontend run dev
 - 缺少 `OPENAI_API_KEY`
   - 规划、综合、部分排序步骤会降级为启发式行为
 - 缺少 `NEWSAPI_KEY`
-  - `news_risk` 可能返回 `partial`
+  - `message_intel` 的新闻事件部分可能返回 `partial`
+- 缺少 FinBERT 依赖或模型
+  - `message_intel` 会回退到规则情感，并记录 warning，不阻塞任务
 - 单个 agent 失败不会直接中断整个 job
 - 只要仍有足够可用证据，系统会尽量返回 `partial` 而不是 `failed`
 - 在证据可匹配时，系统会给结论绑定 citation

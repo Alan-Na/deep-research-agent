@@ -56,8 +56,14 @@ function summarizeAgentPayload(agentName, payload) {
     const snapshot = payload.market_snapshot
     return `Price ${snapshot.last_price ?? 'n/a'} | PE ${snapshot.valuation?.pe_ttm ?? 'n/a'} | PB ${snapshot.valuation?.pb ?? 'n/a'}`
   }
+  if (agentName === 'message_intel' && payload.dominant_narrative) return payload.dominant_narrative
   if (agentName === 'news_risk' && payload.dominant_narrative) return payload.dominant_narrative
-  if (agentName === 'web_intel' && payload.official_website) return `Official website: ${payload.official_website}`
+  if ((agentName === 'message_intel' || agentName === 'web_intel') && payload.official_website) {
+    return `Official website: ${payload.official_website}`
+  }
+  if (agentName === 'filing' && payload.financial_statement_analysis?.overall_financial_assessment?.summary) {
+    return payload.financial_statement_analysis.overall_financial_assessment.summary
+  }
   if (agentName === 'filing' && payload.provider) return `Disclosure provider: ${payload.provider}`
   return Object.keys(payload).slice(0, 4).join(', ')
 }
@@ -79,6 +85,13 @@ function extractKeyPoints(payload) {
   addMany(payload.bear_case)
   addMany(payload.key_risks)
   addMany(payload.key_catalysts)
+  if (payload.financial_statement_analysis) {
+    addMany((payload.financial_statement_analysis.strengths || []).map((item) => item.summary))
+    addMany((payload.financial_statement_analysis.risks || []).map((item) => item.summary))
+  }
+  if (payload.news_signal_analysis) {
+    addMany((payload.news_signal_analysis.events || []).map((item) => item.one_line_summary))
+  }
   return [...new Set(points)].slice(0, 6)
 }
 

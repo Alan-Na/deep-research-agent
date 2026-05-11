@@ -4,31 +4,12 @@ from app.schemas import AgentResult, EvidenceItem, EventItem, InstrumentInfo, In
 
 def test_build_evidence_index_and_chunks():
     agent_results = {
-        "web_intel": AgentResult(
-            agent_name="web_intel",
+        "message_intel": AgentResult(
+            agent_name="message_intel",
             applicable=True,
             status="success",
-            summary="官网强调高端白酒品牌、渠道与投资者关系页面。",
-            key_points=["IR 页面提供了公告和投资者沟通入口。"],
-            payload={"signal_bias": "positive"},
-            evidence=[
-                EvidenceItem(
-                    agent_name="web_intel",
-                    source_type="official_website",
-                    category="website_page",
-                    title="官网首页",
-                    date="2026-04-10",
-                    snippet="官网强调高端品牌、渠道管理与投资者关系页面。",
-                    url="https://example.com",
-                )
-            ],
-        ),
-        "news_risk": AgentResult(
-            agent_name="news_risk",
-            applicable=True,
-            status="success",
-            summary="近期新闻聚焦分红与年报表现。",
-            key_points=["高分红是近期最强的中期催化之一。"],
+            summary="消息面显示官网强调高端白酒品牌、渠道与投资者关系页面，近期新闻聚焦分红与年报表现。",
+            key_points=["IR 页面提供了公告和投资者沟通入口。", "高分红是近期最强的中期催化之一。"],
             payload={"signal_bias": "positive"},
             events=[
                 EventItem(
@@ -45,7 +26,16 @@ def test_build_evidence_index_and_chunks():
             ],
             evidence=[
                 EvidenceItem(
-                    agent_name="news_risk",
+                    agent_name="message_intel",
+                    source_type="official_website",
+                    category="website_page",
+                    title="官网首页",
+                    date="2026-04-10",
+                    snippet="官网强调高端品牌、渠道管理与投资者关系页面。",
+                    url="https://example.com",
+                ),
+                EvidenceItem(
+                    agent_name="message_intel",
                     source_type="news_article",
                     category="news_article",
                     title="年度分红方案",
@@ -62,7 +52,7 @@ def test_build_evidence_index_and_chunks():
 
     assert evidence_items
     assert events
-    assert coverage["valid_agent_count"] == 2
+    assert coverage["valid_agent_count"] == 1
     assert documents
     assert chunks
     assert {chunk.source_type for chunk in chunks} >= {"official_website", "news_article", "agent_summary"}

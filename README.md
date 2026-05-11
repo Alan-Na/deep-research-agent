@@ -15,8 +15,7 @@ The main deliverable is investment analysis of public companies, with the first 
   - First-class agents are fixed to:
       - `market`
       - `filing`
-      - `web_intel`
-      - `news_risk`
+      - `message_intel`
       - `critic_output`
   - Uses Redis queues for async jobs and SSE for real-time progress streaming
   - Uses PostgreSQL to persist jobs, agent runs, memos, evidence documents, evidence chunks, citations, critic runs, and event records
@@ -36,17 +35,17 @@ The execution flow is as follows:
       - `evidence_index`
       - `critic_output`
       - `finalize`
-4.  The first four research agents run in parallel:
+4.  The three research agents run in parallel:
       - `Market Agent`
           - Responsible for price, yield, trading volume, volatility, and valuation snapshots
           - Accesses market data through the local `market-data-mcp` abstraction
       - `Filing Agent`
-          - Responsible for disclosure/financial report discovery and structured extraction
+          - Responsible for filing discovery, core financial statement extraction, key metric calculation, and financial risk flags
           - Primary path is `A-share` disclosure, SEC path is secondary
-      - `Web Intelligence Agent`
-          - Responsible for official websites, IR pages, company positioning, product and business clues
-      - `News/Risk Agent`
-          - Responsible for article fetching, deduplication, clustering, event classification, event cycle determination, and impact/confidence scoring
+      - `Message Intelligence Agent`
+          - Combines official websites, IR pages, company positioning, product and business clues
+          - Runs a deterministic news pipeline: entity aliases, company relevance filtering, SimHash clustering, rule event classification, metric extraction, optional FinBERT-Chinese sentiment, and template summaries
+          - Exposes structured `news_signal_analysis` while still mapping events into the existing critic/retrieval/event-record interfaces
 5.  The `Critic & Output Agent` only consumes shared evidence and previous agent outputs. It checks:
       - Whether the stance is supported by evidence
       - Citation coverage
@@ -147,7 +146,9 @@ The rest of the React page structure can be freely replaced without affecting ba
   - Missing `OPENAI_API_KEY`
       - Planning, synthesis, and some sorting steps will degrade to heuristic behavior
   - Missing `NEWSAPI_KEY`
-      - `news_risk` may return `partial`
+      - The news-event portion of `message_intel` may return `partial`
+  - Missing FinBERT dependencies/model
+      - `message_intel` falls back to rule-based sentiment and records a warning instead of blocking jobs
   - A single agent failure will not directly abort the entire job
   - As long as there is enough usable evidence, the system will try its best to return `partial` instead of `failed`
   - When evidence can be matched, the system will bind citations to the conclusions

@@ -141,9 +141,10 @@ def _heuristic_draft(
 
     confidence = min(0.85, 0.35 + (coverage.get("valid_agent_count", 0) * 0.1) + (0.08 if positive != negative else 0.0))
     market_summary = agent_results.get("market").summary if agent_results.get("market") else "市场信息有限"
-    filing_summary = agent_results.get("filing").summary if agent_results.get("filing") else "披露信息有限"
-    news_summary = agent_results.get("news_risk").summary if agent_results.get("news_risk") else "新闻信息有限"
-    thesis = f"{market_summary} {filing_summary} {news_summary}"
+    filing_summary = _filing_financial_summary(agent_results.get("filing"))
+    message_result = agent_results.get("message_intel") or agent_results.get("news_risk") or agent_results.get("web_intel")
+    message_summary = message_result.summary if message_result else "消息面信息有限"
+    thesis = f"{market_summary} {filing_summary} {message_summary}"
 
     bull_case = []
     bear_case = []
@@ -181,8 +182,8 @@ def _heuristic_draft(
 
     limitations = list(coverage.get("warnings") or [])
     if not bull_case and not bear_case:
-        bull_case = ["正向证据仍然有限，更多来自市场与官网定性信号。"]
-        bear_case = ["负向证据仍然有限，更多来自新闻和披露风险提示。"]
+        bull_case = ["正向证据仍然有限，更多来自市场与消息面定性信号。"]
+        bear_case = ["负向证据仍然有限，更多来自消息面和披露风险提示。"]
     return InvestmentMemoDraft(
         stance=stance,
         stance_confidence=round(confidence, 2),
@@ -204,3 +205,15 @@ def _market_snapshot_from_agent(agent_result: Any) -> MarketSnapshot | None:
     if not snapshot:
         return None
     return MarketSnapshot.model_validate(snapshot)
+
+
+def _filing_financial_summary(agent_result: Any) -> str:
+    if not agent_result:
+        return "披露信息有限"
+    analysis = agent_result.payload.get("financial_statement_analysis") if agent_result.payload else None
+    if isinstance(analysis, dict):
+        assessment = analysis.get("overall_financial_assessment") or {}
+        summary = assessment.get("summary")
+        if summary:
+            return str(summary)
+    return agent_result.summary or "披露信息有限"

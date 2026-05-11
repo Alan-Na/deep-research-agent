@@ -97,6 +97,111 @@ class FilingInsights(BaseModel):
     guidance_changes: str = ""
 
 
+class FinancialDataQuality(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["success", "partial"] = "partial"
+    missing_fields: List[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class FinancialSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    revenue: float | None = None
+    gross_profit: float | None = None
+    operating_income: float | None = None
+    net_income: float | None = None
+    eps: float | None = None
+    cash_and_equivalents: float | None = None
+    accounts_receivable: float | None = None
+    inventory: float | None = None
+    total_assets: float | None = None
+    total_debt: float | None = None
+    total_liabilities: float | None = None
+    shareholders_equity: float | None = None
+    operating_cash_flow: float | None = None
+    capital_expenditure: float | None = None
+    free_cash_flow: float | None = None
+
+
+class FinancialKeyMetrics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    revenue_yoy_growth: float | None = None
+    operating_income_yoy_growth: float | None = None
+    net_income_yoy_growth: float | None = None
+    operating_cash_flow_yoy_growth: float | None = None
+    accounts_receivable_yoy_growth: float | None = None
+    inventory_yoy_growth: float | None = None
+    gross_margin: float | None = None
+    operating_margin: float | None = None
+    net_margin: float | None = None
+    operating_margin_change: float | None = None
+    ocf_to_net_income: float | None = None
+    fcf_margin: float | None = None
+    debt_to_equity: float | None = None
+    cash_to_debt: float | None = None
+
+
+class FinancialMetricWarning(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    metric: str
+    value: float | None = None
+    warning: str
+
+
+class FinancialSignal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: str
+    summary: str
+    severity: Literal["low", "medium", "high"] = "medium"
+    evidence: Dict[str, Any] = Field(default_factory=dict)
+    confidence: float = Field(default=0.8, ge=0.0, le=1.0)
+
+
+class FinancialAssessment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rating: Literal["positive", "moderately_positive", "neutral", "moderately_negative", "negative"] = "neutral"
+    summary: str
+    main_positive: str = ""
+    main_negative: str = ""
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class FinancialScore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    growth: int = Field(default=3, ge=1, le=5)
+    profitability: int = Field(default=3, ge=1, le=5)
+    cash_flow_quality: int = Field(default=3, ge=1, le=5)
+    balance_sheet: int = Field(default=3, ge=1, le=5)
+    overall: int = Field(default=3, ge=1, le=5)
+    score_interpretation: str = "This score reflects financial health only, not valuation attractiveness."
+
+
+class FinancialStatementAnalysis(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    subagent: str = "financial_statement_agent"
+    company: str
+    period: str | None = None
+    currency: str | None = None
+    unit: str | None = None
+    data_quality: FinancialDataQuality = Field(default_factory=FinancialDataQuality)
+    financial_snapshot: FinancialSnapshot = Field(default_factory=FinancialSnapshot)
+    key_metrics: FinancialKeyMetrics = Field(default_factory=FinancialKeyMetrics)
+    metric_warnings: List[FinancialMetricWarning] = Field(default_factory=list)
+    strengths: List[FinancialSignal] = Field(default_factory=list)
+    risks: List[FinancialSignal] = Field(default_factory=list)
+    overall_financial_assessment: FinancialAssessment
+    questions_for_main_agent: List[str] = Field(default_factory=list)
+    financial_score: FinancialScore = Field(default_factory=FinancialScore)
+
+
 class WebsiteInsights(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -113,6 +218,59 @@ class NewsInsights(BaseModel):
     negative_events: List[str] = Field(default_factory=list)
     dominant_narrative: str = ""
     event_timeline: List[EventItem] = Field(default_factory=list)
+
+
+class NewsExtractedMetric(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    value: float | None = None
+    unit: str
+    raw_text: str
+
+
+class NewsSignalDataQuality(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["success", "partial"] = "partial"
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    warnings: List[str] = Field(default_factory=list)
+
+
+class NewsSignalEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str
+    time: str | None = None
+    category: str
+    title: str
+    summary: str
+    keywords: List[str] = Field(default_factory=list)
+    extracted_metrics: List[NewsExtractedMetric] = Field(default_factory=list)
+    sentiment: SentimentName
+    sentiment_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    sentiment_probs: Dict[str, float] = Field(default_factory=dict)
+    sentiment_method: str
+    source_title: str
+    source_url: str | None = None
+    sources: List[str] = Field(default_factory=list)
+    source_urls: List[str] = Field(default_factory=list)
+    duplicate_count: int = 1
+    one_line_summary: str
+    audit_trail: Dict[str, Any] = Field(default_factory=dict)
+
+
+class NewsSignalAnalysis(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    company: str
+    entity_aliases: List[str] = Field(default_factory=list)
+    raw_article_count: int = 0
+    deduped_event_count: int = 0
+    events: List[NewsSignalEvent] = Field(default_factory=list)
+    dominant_narrative: str = ""
+    data_quality: NewsSignalDataQuality = Field(default_factory=NewsSignalDataQuality)
+    warnings: List[str] = Field(default_factory=list)
 
 
 class EvidenceItem(BaseModel):

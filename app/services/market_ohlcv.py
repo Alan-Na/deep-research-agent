@@ -128,7 +128,7 @@ def get_job_market_ohlcv(job_id: str) -> tuple[str, InstrumentInfo, OhlcvSeries]
         market=instrument.market,
         display_name=instrument.display_name or job.company_name,
         exchange=instrument.exchange,
-        lookback_days=settings.price_lookback_days,
+        lookback_days=settings.market_chart_lookback_days,
     )
     return job.company_name, instrument, result.series
 
@@ -139,7 +139,7 @@ def _default_adjustment(market: MarketName) -> str:
 
 def _compute_refresh_start(latest_cached_date: date | None, lookback_days: int) -> date:
     if latest_cached_date is None:
-        return datetime.now(timezone.utc).date() - timedelta(days=max(lookback_days * 3, 365))
+        return datetime.now(timezone.utc).date() - timedelta(days=max(lookback_days * 2, 60))
     return latest_cached_date - timedelta(days=10)
 
 
@@ -222,10 +222,19 @@ def _fetch_provider_history(*, symbol: str, market: MarketName, start_date: date
                     end_date=end_date,
                     adjust=adjustment,
                 )
-            except Exception:
-                if primary_error is not None:
-                    raise primary_error
-                raise
+            except Exception as tx_error:
+                logger.warning("Secondary A-share OHLCV source failed for %s: %s", symbol, tx_error)
+                try:
+                    history = ak.stock_zh_a_daily(
+                        symbol=prefixed_symbol,
+                        start_date=start_date.strftime("%Y%m%d"),
+                        end_date=end_date,
+                        adjust=adjustment,
+                    )
+                except Exception:
+                    if primary_error is not None:
+                        raise primary_error
+                    raise tx_error
     else:
         if yf is None:
             return pd.DataFrame()

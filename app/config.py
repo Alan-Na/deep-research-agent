@@ -30,11 +30,15 @@ class Settings:
     event_channel_prefix: str = os.getenv("EVENT_CHANNEL_PREFIX", "investment_job_events")
 
     request_timeout: int = int(os.getenv("REQUEST_TIMEOUT", "20"))
-    agent_max_steps: int = int(os.getenv("AGENT_MAX_STEPS", "4"))
+    agent_max_steps: int = int(os.getenv("AGENT_MAX_STEPS", "5"))
     agent_timeout_seconds: int = int(os.getenv("AGENT_TIMEOUT_SECONDS", "45"))
     price_lookback_days: int = int(os.getenv("PRICE_LOOKBACK_DAYS", "90"))
+    market_chart_lookback_days: int = int(os.getenv("MARKET_CHART_LOOKBACK_DAYS", "30"))
     news_days: int = int(os.getenv("NEWS_DAYS", "14"))
     max_news_articles: int = int(os.getenv("MAX_NEWS_ARTICLES", "20"))
+    enable_finbert_sentiment: bool = os.getenv("ENABLE_FINBERT_SENTIMENT", "false").lower() in {"1", "true", "yes"}
+    finbert_chinese_model: str = os.getenv("FINBERT_CHINESE_MODEL", "IDEA-CCNL/Erlangshen-Roberta-110M-Sentiment")
+    finbert_max_chars: int = int(os.getenv("FINBERT_MAX_CHARS", "512"))
     max_website_pages: int = int(os.getenv("MAX_WEBSITE_PAGES", "4"))
     website_page_char_limit: int = int(os.getenv("WEBSITE_PAGE_CHAR_LIMIT", "6000"))
     rag_chunk_size: int = int(os.getenv("RAG_CHUNK_SIZE", "1200"))

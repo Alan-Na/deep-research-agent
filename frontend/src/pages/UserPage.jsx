@@ -7,8 +7,7 @@ const COPY = {
       { key: 'intake_brief', label: 'Building research brief' },
       { key: 'market', label: 'Analyzing market & valuation data' },
       { key: 'filing', label: 'Reading regulatory filings' },
-      { key: 'web_intel', label: 'Scanning official website and IR pages' },
-      { key: 'news_risk', label: 'Clustering news and risk events' },
+      { key: 'message_intel', label: 'Reading official messages and news events' },
       { key: 'critic_output', label: 'Writing the investment memo' },
     ],
     sentiments: {
@@ -26,7 +25,7 @@ const COPY = {
     showAll: (count) => `▼ Show all ${count} sources`,
     researchNotes: 'Research notes',
     marketChart: 'Daily K-Line',
-    marketChartDesc: 'Server-side normalized and cached OHLCV bars with volume overlay.',
+    marketChartDesc: 'Recent 30 trading days of server-side normalized and cached OHLCV bars with volume overlay.',
     cacheHit: 'Cache hit',
     cacheRefresh: 'Incremental refresh',
     cacheMiss: 'Cold fetch',
@@ -50,8 +49,7 @@ const COPY = {
       { key: 'intake_brief', label: '构建研究任务与公司画像' },
       { key: 'market', label: '分析市场与估值数据' },
       { key: 'filing', label: '读取公告与财务披露' },
-      { key: 'web_intel', label: '扫描官网与投资者关系页面' },
-      { key: 'news_risk', label: '聚类新闻与风险事件' },
+      { key: 'message_intel', label: '分析消息面：官网、IR 与新闻事件' },
       { key: 'critic_output', label: '撰写投资研究备忘录' },
     ],
     sentiments: {
@@ -69,7 +67,7 @@ const COPY = {
     showAll: (count) => `▼ 查看全部 ${count} 条来源`,
     researchNotes: '研究说明',
     marketChart: '日 K 线',
-    marketChartDesc: '服务端统一清洗、缓存并增量更新的 OHLCV 与成交量数据。',
+    marketChartDesc: '近 30 个交易日的 OHLCV 与成交量，服务端统一清洗、缓存并增量更新。',
     cacheHit: '命中缓存',
     cacheRefresh: '增量刷新',
     cacheMiss: '首次拉取',
@@ -119,7 +117,15 @@ const SOURCE_COLOR = {
 function formatDate(iso, lang) {
   if (!iso) return ''
   try {
-    return new Date(iso).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US', {
+    let normalized = iso
+    if (typeof iso === 'string' && /^\d{8}$/.test(iso)) {
+      normalized = `${iso.slice(0, 4)}-${iso.slice(4, 6)}-${iso.slice(6, 8)}`
+    }
+    const value = new Date(normalized)
+    if (Number.isNaN(value.getTime()) || value.getUTCFullYear() < 2000) {
+      return ''
+    }
+    return value.toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',

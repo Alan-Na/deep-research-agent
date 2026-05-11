@@ -407,7 +407,7 @@ def _persist_completed_job(job_id: str, result: dict[str, Any], memo: Investment
             session.add(
                 EventRecord(
                     job_id=job_id,
-                    agent_name="news_risk",
+                    agent_name="message_intel",
                     title=event.title,
                     category=event.category,
                     horizon=event.horizon,
