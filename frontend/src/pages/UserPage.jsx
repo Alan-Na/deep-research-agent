@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { createJob, getJob, getOhlcv, getReport, openEventStream } from '../api'
+import { createJob, deleteJob, getJob, getOhlcv, getReport, listJobs, openEventStream, chatWithReport } from '../api'
 
 const COPY = {
   en: {
@@ -25,7 +25,7 @@ const COPY = {
     showAll: (count) => `▼ Show all ${count} sources`,
     researchNotes: 'Research notes',
     marketChart: 'Daily K-Line',
-    marketChartDesc: 'Recent 30 trading days of server-side normalized and cached OHLCV bars with volume overlay.',
+    marketChartDesc: 'Recent 60 trading days of normalized OHLCV bars with MA5, MA10, MA20 and volume overlay. Scroll horizontally to inspect earlier bars.',
     cacheHit: 'Cache hit',
     cacheRefresh: 'Incremental refresh',
     cacheMiss: 'Cold fetch',
@@ -43,6 +43,18 @@ const COPY = {
     analyzing: 'Analyzing',
     analyzeButton: 'Analyze →',
     recentSearches: 'Recent searches',
+    openPrevious: 'Open',
+    deleteSearch: 'Delete',
+    loadingPrevious: 'Opening saved result…',
+    chatOpen: 'Ask',
+    chatClose: 'Exit Chat',
+    chatTitle: 'Company Q&A',
+    chatIntro: 'Ask follow-up questions about this company. Answers use only the completed research context.',
+    chatPlaceholder: 'Ask about valuation, filings, news signals…',
+    chatSend: 'Send',
+    chatThinking: 'Reading context…',
+    chatError: 'Failed to answer. Please try again.',
+    chatSources: 'Sources',
   },
   zh: {
     steps: [
@@ -67,7 +79,7 @@ const COPY = {
     showAll: (count) => `▼ 查看全部 ${count} 条来源`,
     researchNotes: '研究说明',
     marketChart: '日 K 线',
-    marketChartDesc: '近 30 个交易日的 OHLCV 与成交量，服务端统一清洗、缓存并增量更新。',
+    marketChartDesc: '近 60 个交易日的 OHLCV、MA5、MA10、MA20 与成交量。图表固定大小，可左右滑动查看早期 K 线。',
     cacheHit: '命中缓存',
     cacheRefresh: '增量刷新',
     cacheMiss: '首次拉取',
@@ -85,6 +97,18 @@ const COPY = {
     analyzing: '分析中',
     analyzeButton: '开始分析 →',
     recentSearches: '最近检索',
+    openPrevious: '查看',
+    deleteSearch: '删除',
+    loadingPrevious: '正在打开历史结果…',
+    chatOpen: '追问',
+    chatClose: '退出对话',
+    chatTitle: '公司研究问答',
+    chatIntro: '可以围绕这家公司继续追问。回答只使用本次研究链路生成的上下文。',
+    chatPlaceholder: '追问估值、财报、新闻信号…',
+    chatSend: '发送',
+    chatThinking: '正在读取上下文…',
+    chatError: '回答失败，请稍后重试。',
+    chatSources: '来源',
   },
 }
 
@@ -136,8 +160,32 @@ function formatDate(iso, lang) {
 }
 
 function loadHistory() {
-  try { return JSON.parse(localStorage.getItem('rh') || '[]') }
+  try {
+    const items = JSON.parse(localStorage.getItem('rh') || '[]')
+    return Array.isArray(items) ? items.filter(item => item?.company) : []
+  }
   catch { return [] }
+}
+
+function saveHistory(items) {
+  const compacted = []
+  const seen = new Set()
+  for (const item of items || []) {
+    if (!item?.company) continue
+    const key = item.jobId || item.job_id || item.company
+    if (seen.has(key)) continue
+    seen.add(key)
+    compacted.push({
+      company: item.company || item.company_name,
+      jobId: item.jobId || item.job_id || item.id || null,
+      reportId: item.reportId || item.report_id || item.memo_id || null,
+      status: item.status || null,
+      ts: item.ts || Date.now(),
+    })
+  }
+  const next = compacted.slice(0, 10)
+  localStorage.setItem('rh', JSON.stringify(next))
+  return next
 }
 
 function Spinner({ size = 16 }) {
@@ -306,15 +354,29 @@ function SourceRow({ item, lang }) {
   )
 }
 
+function movingAverage(values, windowSize) {
+  return values.map((_, index) => {
+    if (index < windowSize - 1) return null
+    const window = values.slice(index - windowSize + 1, index + 1)
+    if (window.some((value) => value == null || Number.isNaN(value))) return null
+    const average = window.reduce((sum, value) => sum + value, 0) / windowSize
+    return Number(average.toFixed(4))
+  })
+}
+
 function MarketChartCard({ ohlcv, copy, lang }) {
   const chartRef = useRef(null)
 
   useEffect(() => {
     if (!chartRef.current || !ohlcv?.series?.bars?.length) return undefined
 
-    const bars = ohlcv.series.bars
+    const bars = ohlcv.series.bars.slice(-60)
     const dates = bars.map((item) => item.date)
     const candleData = bars.map((item) => [item.open, item.close, item.low, item.high])
+    const closeValues = bars.map((item) => Number(item.close))
+    const ma5 = movingAverage(closeValues, 5)
+    const ma10 = movingAverage(closeValues, 10)
+    const ma20 = movingAverage(closeValues, 20)
     const volumeData = bars.map((item) => ({
       value: item.volume ?? 0,
       itemStyle: {
@@ -332,9 +394,24 @@ function MarketChartCard({ ohlcv, copy, lang }) {
       chart.setOption({
         animation: false,
         backgroundColor: 'transparent',
-        tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+        color: ['#b42318', '#d97706', '#2563eb', '#7c3aed', '#8a7f6d'],
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: { type: 'cross' },
+          borderColor: '#e8dfcf',
+          backgroundColor: 'rgba(255, 255, 255, 0.96)',
+          textStyle: { color: '#2f2a23' },
+        },
+        legend: {
+          top: 16,
+          right: 24,
+          itemWidth: 18,
+          itemHeight: 8,
+          textStyle: { color: '#6f6a61', fontSize: 12 },
+          data: [copy.marketChart, 'MA5', 'MA10', 'MA20'],
+        },
         grid: [
-          { left: 52, right: 24, top: 50, height: '56%' },
+          { left: 52, right: 24, top: 58, height: '54%' },
           { left: 52, right: 24, top: '74%', height: '16%' },
         ],
         xAxis: [
@@ -380,10 +457,6 @@ function MarketChartCard({ ohlcv, copy, lang }) {
             },
           },
         ],
-        dataZoom: [
-          { type: 'inside', xAxisIndex: [0, 1], start: 45, end: 100 },
-          { type: 'slider', xAxisIndex: [0, 1], bottom: 10, height: 18, borderColor: '#e8dfcf' },
-        ],
         series: [
           {
             type: 'candlestick',
@@ -395,13 +468,41 @@ function MarketChartCard({ ohlcv, copy, lang }) {
               borderColor: '#b42318',
               borderColor0: '#12715b',
             },
+            barWidth: 8,
+          },
+          {
+            type: 'line',
+            name: 'MA5',
+            data: ma5,
+            smooth: true,
+            showSymbol: false,
+            lineStyle: { width: 1.6, color: '#d97706' },
+            connectNulls: false,
+          },
+          {
+            type: 'line',
+            name: 'MA10',
+            data: ma10,
+            smooth: true,
+            showSymbol: false,
+            lineStyle: { width: 1.6, color: '#2563eb' },
+            connectNulls: false,
+          },
+          {
+            type: 'line',
+            name: 'MA20',
+            data: ma20,
+            smooth: true,
+            showSymbol: false,
+            lineStyle: { width: 1.6, color: '#7c3aed' },
+            connectNulls: false,
           },
           {
             type: 'bar',
             xAxisIndex: 1,
             yAxisIndex: 1,
             data: volumeData,
-            barMaxWidth: 10,
+            barWidth: 8,
           },
         ],
       })
@@ -418,6 +519,8 @@ function MarketChartCard({ ohlcv, copy, lang }) {
   }, [ohlcv, copy])
 
   if (!ohlcv?.series?.bars?.length) return null
+  const visibleBars = ohlcv.series.bars.slice(-60)
+  const chartWidth = Math.max(900, visibleBars.length * 16 + 120)
 
   const cacheLabel = {
     hit: copy.cacheHit,
@@ -459,7 +562,15 @@ function MarketChartCard({ ohlcv, copy, lang }) {
             )}
           </div>
         </div>
-        <div ref={chartRef} style={{ width: '100%', height: 420 }} />
+        <div style={{
+          overflowX: 'auto',
+          overflowY: 'hidden',
+          border: '1px solid var(--border)',
+          borderRadius: 12,
+          background: 'var(--white)',
+        }}>
+          <div ref={chartRef} style={{ width: chartWidth, height: 420 }} />
+        </div>
       </div>
     </section>
   )
@@ -580,6 +691,164 @@ function Report({ data, copy, lang }) {
   )
 }
 
+function ChatPanel({ open, onClose, report, copy }) {
+  const [messages, setMessages] = useState([])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const bodyRef = useRef(null)
+
+  useEffect(() => {
+    setMessages([])
+    setInput('')
+    setError('')
+  }, [report?.report_id])
+
+  useEffect(() => {
+    if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight
+  }, [messages, loading])
+
+  if (!open || !report?.report_id) return null
+
+  const send = async (e) => {
+    e?.preventDefault()
+    const question = input.trim()
+    if (!question || loading) return
+    const history = messages.map((item) => ({ role: item.role, content: item.content }))
+    setMessages((prev) => [...prev, { role: 'user', content: question }])
+    setInput('')
+    setError('')
+    setLoading(true)
+    try {
+      const response = await chatWithReport(report.report_id, question, history)
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: response.answer || '',
+          sources: response.sources || [],
+          rejected: response.rejected,
+        },
+      ])
+    } catch {
+      setError(copy.chatError)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <aside style={{
+      position: 'fixed', right: 24, top: 72, bottom: 24, width: 'min(420px, calc(100vw - 32px))',
+      zIndex: 120, background: 'var(--white)', border: '1px solid var(--border)',
+      borderRadius: 14, boxShadow: 'var(--shadow-md)', display: 'flex', flexDirection: 'column',
+      overflow: 'hidden',
+    }}>
+      <div style={{
+        padding: '16px 18px', borderBottom: '1px solid var(--border)',
+        display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12,
+      }}>
+        <div>
+          <h2 style={{ fontFamily: 'var(--serif)', fontSize: 19, color: 'var(--ink)', marginBottom: 4 }}>
+            {copy.chatTitle}
+          </h2>
+          <p style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.45 }}>{copy.chatIntro}</p>
+        </div>
+        <button onClick={onClose} style={{
+          border: '1px solid var(--border)', borderRadius: 8, padding: '5px 9px',
+          color: 'var(--muted)', fontSize: 12, flexShrink: 0,
+        }}>
+          {copy.chatClose}
+        </button>
+      </div>
+
+      <div ref={bodyRef} style={{ flex: 1, overflowY: 'auto', padding: 16, background: 'var(--cream)' }}>
+        {messages.length === 0 && (
+          <div style={{
+            background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 12,
+            padding: 14, color: 'var(--muted)', fontSize: 13.5, lineHeight: 1.55,
+          }}>
+            {copy.chatIntro}
+          </div>
+        )}
+        {messages.map((message, index) => {
+          const isUser = message.role === 'user'
+          return (
+            <div key={index} style={{
+              display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start',
+              marginBottom: 12,
+            }}>
+              <div style={{
+                maxWidth: '88%',
+                background: isUser ? 'var(--ink)' : 'var(--white)',
+                color: isUser ? 'var(--white)' : 'var(--ink)',
+                border: isUser ? 'none' : '1px solid var(--border)',
+                borderRadius: 12,
+                padding: '11px 13px',
+                fontSize: 14,
+                lineHeight: 1.55,
+                whiteSpace: 'pre-wrap',
+                boxShadow: isUser ? 'none' : 'var(--shadow-sm)',
+              }}>
+                {message.content}
+                {!isUser && message.sources?.length > 0 && (
+                  <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--cream-dark)' }}>
+                    <p style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 5 }}>
+                      {copy.chatSources}
+                    </p>
+                    {message.sources.slice(0, 3).map((source, i) => (
+                      <div key={i} style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.4, marginTop: 4 }}>
+                        {source.url ? (
+                          <a href={source.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gold)', fontWeight: 600 }}>
+                            {source.title}
+                          </a>
+                        ) : (
+                          <strong style={{ color: 'var(--muted)' }}>{source.title}</strong>
+                        )}
+                        {source.snippet && <span> · {source.snippet}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
+        {loading && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--muted)', fontSize: 13 }}>
+            <Spinner size={14} /> {copy.chatThinking}
+          </div>
+        )}
+        {error && <p style={{ color: 'var(--negative)', fontSize: 13, marginTop: 8 }}>{error}</p>}
+      </div>
+
+      <form onSubmit={send} style={{
+        padding: 12, borderTop: '1px solid var(--border)', display: 'flex', gap: 8,
+        background: 'var(--white)',
+      }}>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder={copy.chatPlaceholder}
+          disabled={loading}
+          style={{
+            flex: 1, minWidth: 0, border: '1px solid var(--border)', borderRadius: 10,
+            padding: '10px 12px', fontSize: 14, color: 'var(--ink)', outline: 'none',
+          }}
+        />
+        <button type="submit" disabled={loading || !input.trim()} style={{
+          background: loading || !input.trim() ? 'var(--cream-dark)' : 'var(--ink)',
+          color: loading || !input.trim() ? 'var(--muted)' : 'var(--white)',
+          borderRadius: 10, padding: '9px 13px', fontSize: 13, fontWeight: 700,
+          flexShrink: 0,
+        }}>
+          {copy.chatSend}
+        </button>
+      </form>
+    </aside>
+  )
+}
+
 export default function UserPage({ lang = 'en', onToggleLang, onSwitchToDev }) {
   const copy = COPY[lang] || COPY.en
   const [query, setQuery] = useState('')
@@ -589,6 +858,8 @@ export default function UserPage({ lang = 'en', onToggleLang, onSwitchToDev }) {
   const [ohlcv, setOhlcv] = useState(null)
   const [errorMsg, setErrorMsg] = useState('')
   const [history, setHistory] = useState(loadHistory)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [openingJobId, setOpeningJobId] = useState(null)
 
   const esRef = useRef(null)
   const pollRef = useRef(null)
@@ -606,9 +877,31 @@ export default function UserPage({ lang = 'en', onToggleLang, onSwitchToDev }) {
 
   useEffect(() => () => stopListeners(), [stopListeners])
 
+  useEffect(() => {
+    let active = true
+    listJobs(10)
+      .then((items) => {
+        if (!active || !Array.isArray(items)) return
+        const serverHistory = items
+          .filter((item) => item?.job_id && item?.company_name)
+          .map((item) => ({
+            company: item.company_name,
+            jobId: item.job_id,
+            reportId: item.report_id || item.memo_id || null,
+            status: item.status,
+            ts: item.created_at ? new Date(item.created_at).getTime() : Date.now(),
+          }))
+        setHistory(saveHistory([...serverHistory, ...loadHistory()]))
+      })
+      .catch(() => {})
+    return () => { active = false }
+  }, [])
+
   const pushHistory = (company, jobId) => {
-    const next = [{ company, jobId, ts: Date.now() }, ...loadHistory()].slice(0, 10)
-    localStorage.setItem('rh', JSON.stringify(next))
+    const next = saveHistory([
+      { company, jobId, ts: Date.now(), status: 'running' },
+      ...loadHistory().filter((item) => item.jobId !== jobId && item.company !== company),
+    ])
     setHistory(next)
   }
 
@@ -642,6 +935,7 @@ export default function UserPage({ lang = 'en', onToggleLang, onSwitchToDev }) {
     setModuleStatus({})
     setReport(null)
     setOhlcv(null)
+    setChatOpen(false)
     setErrorMsg('')
 
     let job
@@ -671,6 +965,57 @@ export default function UserPage({ lang = 'en', onToggleLang, onSwitchToDev }) {
     }, 4000)
   }, [copy.startFailed, stopListeners])
 
+  const openHistoryItem = async (item) => {
+    if (!item?.jobId) {
+      if (item?.company) startJob(item.company)
+      return
+    }
+    stopListeners()
+    setOpeningJobId(item.jobId)
+    setQuery(item.company || '')
+    setPhase('analyzing')
+    setModuleStatus({})
+    setReport(null)
+    setOhlcv(null)
+    setChatOpen(false)
+    setErrorMsg('')
+
+    const done = await loadJobReport(item.jobId)
+    if (done) {
+      setOpeningJobId(null)
+      return
+    }
+
+    esRef.current = openEventStream(item.jobId, (data) => {
+      const type = data.type || data.event || ''
+      const node = data.node || data.module || data.step || ''
+      if (node) setModuleStatus(prev => ({ ...prev, [node]: type }))
+      if (type === 'done' || type === 'job_completed' || data.status === 'completed' || data.report_id || data.memo_id) {
+        loadJobReport(item.jobId).finally(() => setOpeningJobId(null))
+      }
+    })
+
+    pollRef.current = setInterval(async () => {
+      const completed = await loadJobReport(item.jobId)
+      if (completed) {
+        setOpeningJobId(null)
+        stopListeners()
+      }
+    }, 4000)
+  }
+
+  const removeHistoryItem = async (item) => {
+    const next = saveHistory(loadHistory().filter((entry) => {
+      if (item.jobId) return entry.jobId !== item.jobId
+      return entry.company !== item.company
+    }))
+    setHistory(next)
+    if (item.jobId) {
+      await deleteJob(item.jobId).catch(() => {})
+      if (report?.job_id === item.jobId) reset()
+    }
+  }
+
   const handleSubmit = (e) => {
     e?.preventDefault()
     if (query.trim()) startJob(query.trim())
@@ -682,6 +1027,7 @@ export default function UserPage({ lang = 'en', onToggleLang, onSwitchToDev }) {
     setQuery('')
     setReport(null)
     setOhlcv(null)
+    setChatOpen(false)
     setModuleStatus({})
     setErrorMsg('')
   }
@@ -720,13 +1066,22 @@ export default function UserPage({ lang = 'en', onToggleLang, onSwitchToDev }) {
             {copy.languageToggle}
           </button>
           {isResult && (
-            <button onClick={reset} style={{
-              fontSize: 13, color: 'var(--gold)', fontWeight: 600,
-              padding: '6px 14px', border: '1px solid var(--gold)',
-              borderRadius: 8, background: 'transparent',
-            }}>
-              {copy.newSearch}
-            </button>
+            <>
+              <button onClick={() => setChatOpen((value) => !value)} style={{
+                fontSize: 13, color: chatOpen ? 'var(--white)' : 'var(--gold)', fontWeight: 600,
+                padding: '6px 14px', border: '1px solid var(--gold)',
+                borderRadius: 8, background: chatOpen ? 'var(--gold)' : 'transparent',
+              }}>
+                {chatOpen ? copy.chatClose : copy.chatOpen}
+              </button>
+              <button onClick={reset} style={{
+                fontSize: 13, color: 'var(--gold)', fontWeight: 600,
+                padding: '6px 14px', border: '1px solid var(--gold)',
+                borderRadius: 8, background: 'transparent',
+              }}>
+                {copy.newSearch}
+              </button>
+            </>
           )}
           <button onClick={onSwitchToDev} style={{
             fontSize: 13, color: 'var(--muted)', fontWeight: 500,
@@ -826,6 +1181,7 @@ export default function UserPage({ lang = 'en', onToggleLang, onSwitchToDev }) {
         <div style={{ padding: '32px 24px' }}>
           <MarketChartCard ohlcv={ohlcv} copy={copy} lang={lang} />
           <Report data={report} copy={copy} lang={lang} />
+          <ChatPanel open={chatOpen} onClose={() => setChatOpen(false)} report={report} copy={copy} />
         </div>
       )}
 
@@ -834,20 +1190,43 @@ export default function UserPage({ lang = 'en', onToggleLang, onSwitchToDev }) {
           <p style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 12 }}>
             {copy.recentSearches}
           </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: 'grid', gap: 8 }}>
             {history.map((h, i) => (
-              <button key={i} onClick={() => { setQuery(h.company); startJob(h.company) }}
-                style={{
-                  padding: '7px 16px',
-                  background: 'var(--white)', border: '1px solid var(--border)',
-                  borderRadius: 999, fontSize: 13, color: 'var(--ink)',
-                  cursor: 'pointer', transition: 'border-color .2s, color .2s',
-                }}
-                onMouseEnter={e => { e.target.style.borderColor = 'var(--gold)'; e.target.style.color = 'var(--gold)' }}
-                onMouseLeave={e => { e.target.style.borderColor = 'var(--border)'; e.target.style.color = 'var(--ink)' }}
-              >
-                {h.company}
-              </button>
+              <div key={h.jobId || `${h.company}-${i}`} style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                background: 'var(--white)', border: '1px solid var(--border)',
+                borderRadius: 12, padding: '8px 10px',
+                boxShadow: 'var(--shadow-sm)',
+              }}>
+                <button
+                  onClick={() => openHistoryItem(h)}
+                  disabled={openingJobId === h.jobId}
+                  style={{
+                    flex: 1, minWidth: 0, textAlign: 'left',
+                    color: 'var(--ink)', cursor: openingJobId === h.jobId ? 'default' : 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                  }}
+                >
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 14, fontWeight: 600 }}>
+                    {h.company}
+                  </span>
+                  <span style={{ fontSize: 12, color: 'var(--gold)', flexShrink: 0 }}>
+                    {openingJobId === h.jobId ? copy.loadingPrevious : copy.openPrevious}
+                  </span>
+                </button>
+                <button
+                  onClick={() => removeHistoryItem(h)}
+                  title={copy.deleteSearch}
+                  aria-label={copy.deleteSearch}
+                  style={{
+                    width: 28, height: 28, borderRadius: 8,
+                    border: '1px solid var(--border)', color: 'var(--muted)',
+                    fontSize: 16, lineHeight: 1, flexShrink: 0,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
             ))}
           </div>
         </div>

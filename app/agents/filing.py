@@ -76,14 +76,27 @@ FIELD_ALIASES = {
     "accounts_receivable": ["应收账款", "accounts receivable", "trade receivables"],
     "inventory": ["存货", "inventory", "inventories"],
     "total_assets": ["资产总计", "总资产", "total assets"],
-    "total_debt": ["有息负债", "总债务", "短期借款", "长期借款", "total debt", "total borrowings", "interest-bearing debt", "short-term borrowings", "long-term borrowings"],
+    "total_debt": ["有息负债", "总债务", "total debt", "total borrowings", "interest-bearing debt"],
     "total_liabilities": ["负债合计", "总负债", "total liabilities"],
-    "shareholders_equity": ["归属于母公司所有者权益合计", "所有者权益合计", "股东权益合计", "shareholders' equity", "shareholders equity", "stockholders' equity", "total equity"],
+    "shareholders_equity": ["归属于母公司所有者权益（或股东权益）合计", "归属于母公司所有者权益合计", "所有者权益（或股东权益）合计", "所有者权益合计", "股东权益合计", "shareholders' equity", "shareholders equity", "stockholders' equity", "total equity"],
     "operating_cash_flow": ["经营活动产生的现金流量净额", "经营活动现金流量净额", "operating cash flow", "net cash provided by operating activities", "cash provided by operating activities"],
     "capital_expenditure": ["购建固定资产、无形资产和其他长期资产支付的现金", "购建固定资产", "资本开支", "资本性支出", "capital expenditure", "capital expenditures", "purchase of property and equipment", "purchases of property and equipment", "capex"],
 }
 
 NUMBER_PATTERN = re.compile(r"\(?-?(?:[$¥￥]|RMB|US\$|USD|CNY)?\s*\d[\d,]*(?:\.\d+)?\)?", re.IGNORECASE)
+DEBT_COMPONENT_ALIASES = [
+    "短期借款",
+    "一年内到期的非流动负债",
+    "长期借款",
+    "应付债券",
+    "租赁负债",
+    "short-term borrowings",
+    "current portion of long-term debt",
+    "long-term borrowings",
+    "long-term debt",
+    "bonds payable",
+    "lease liabilities",
+]
 
 
 @dataclass
@@ -126,9 +139,12 @@ class AShareDisclosureProvider:
             data = response.json()
             announcements.extend(data.get("announcements", []))
 
+        sorted_announcements = sorted(announcements, key=lambda item: item.get("announcementTime", 0), reverse=True)
+        selected_announcements = _prioritize_cninfo_announcements(sorted_announcements, brief, limit)
+
         documents: list[FilingDocument] = []
         seen_urls: set[str] = set()
-        for announcement in sorted(announcements, key=lambda item: item.get("announcementTime", 0), reverse=True):
+        for announcement in selected_announcements:
             symbol = str(announcement.get("secCode") or "")
             if brief.instrument.symbol and symbol and symbol != brief.instrument.symbol:
                 continue
@@ -463,6 +479,8 @@ def _parse_document_financials(brief: ResearchBrief, document: dict[str, Any]) -
     field_sources: dict[str, dict[str, Any]] = {}
     for field in [*INCOME_FIELDS, *BALANCE_FIELDS, *CASH_FLOW_FIELDS]:
         value, snippet = _extract_field_value(text, field)
+        if value is None and field == "total_debt":
+            value, snippet = _extract_total_debt(text)
         if value is None:
             continue
         statement_key = _statement_key(field)
@@ -482,23 +500,35 @@ def _parse_document_financials(brief: ResearchBrief, document: dict[str, Any]) -
 
 def _extract_field_value(text: str, field: str) -> tuple[float | None, str | None]:
     aliases = FIELD_ALIASES[field]
-    lowered = text.lower()
     for alias in aliases:
-        lowered_alias = alias.lower()
-        index = lowered.find(lowered_alias)
-        if index < 0:
+        match = _find_alias(text, alias)
+        if match is None:
             continue
-        window = text[index : index + 260]
-        value = _first_number_after_alias(window, alias)
+        window = text[match.start() : match.start() + 260]
+        value = _first_number_after_alias(window, alias, alias_end=match.end() - match.start())
         if value is not None:
             return value, truncate_text(window, 240)
     return None, None
 
 
-def _first_number_after_alias(window: str, alias: str) -> float | None:
-    alias_index = window.lower().find(alias.lower())
-    if alias_index >= 0:
-        window = window[alias_index + len(alias) :]
+def _find_alias(text: str, alias: str) -> re.Match[str] | None:
+    if _has_cjk(alias):
+        pattern = r"\s*".join(re.escape(char) for char in alias)
+        return re.search(pattern, text, flags=re.IGNORECASE)
+    return re.search(re.escape(alias), text, flags=re.IGNORECASE)
+
+
+def _has_cjk(value: str) -> bool:
+    return any("\u4e00" <= char <= "\u9fff" for char in value)
+
+
+def _first_number_after_alias(window: str, alias: str, alias_end: int | None = None) -> float | None:
+    if alias_end is not None:
+        window = window[alias_end:]
+    else:
+        match = _find_alias(window, alias)
+        if match is not None:
+            window = window[match.end() :]
     for match in NUMBER_PATTERN.finditer(window):
         raw = match.group(0)
         if _looks_like_year(raw):
@@ -507,6 +537,30 @@ def _first_number_after_alias(window: str, alias: str) -> float | None:
         if value is not None:
             return value
     return None
+
+
+def _extract_total_debt(text: str) -> tuple[float | None, str | None]:
+    components: list[tuple[str, float, str]] = []
+    for alias in DEBT_COMPONENT_ALIASES:
+        value, snippet = _extract_alias_value(text, alias)
+        if value is not None:
+            components.append((alias, value, snippet or ""))
+    if not components:
+        return None, None
+    total = sum(value for _, value, _ in components)
+    source = "; ".join(f"{alias}={value}" for alias, value, _ in components)
+    return total, truncate_text(source, 240)
+
+
+def _extract_alias_value(text: str, alias: str) -> tuple[float | None, str | None]:
+    match = _find_alias(text, alias)
+    if match is None:
+        return None, None
+    window = text[match.start() : match.start() + 260]
+    value = _first_number_after_alias(window, alias, alias_end=match.end() - match.start())
+    if value is None:
+        return None, None
+    return value, truncate_text(window, 240)
 
 
 def _parse_number(raw: str) -> float | None:
@@ -548,6 +602,8 @@ def _detect_currency(text: str) -> str | None:
 
 def _detect_unit(text: str) -> str | None:
     lowered = text.lower()
+    if "单位：元" in text or "单位:元" in text or "unit: yuan" in lowered:
+        return "cny"
     if "单位：万元" in text or "单位:万元" in text:
         return "ten_thousand_cny"
     if "单位：亿元" in text or "单位:亿元" in text:
@@ -593,10 +649,20 @@ def _select_same_period_last_year(current_period: dict[str, Any], candidates: li
             if item.get("period") == target:
                 return item
     current_type = (current_period.get("document") or {}).get("filing_type")
+    current_year = int(current_year_match.group(1)) if current_year_match else None
     for item in candidates:
-        if (item.get("document") or {}).get("filing_type") == current_type:
+        candidate_period = str(item.get("period") or "")
+        candidate_year_match = re.search(r"(20\d{2}|19\d{2})", candidate_period)
+        candidate_year = int(candidate_year_match.group(1)) if candidate_year_match else None
+        if (
+            current_type
+            and current_type != "公告"
+            and (item.get("document") or {}).get("filing_type") == current_type
+            and current_year is not None
+            and candidate_year == current_year - 1
+        ):
             return item
-    return candidates[0] if candidates else None
+    return None
 
 
 def _flatten_period_values(period: dict[str, Any] | None) -> dict[str, float | None]:
@@ -1099,6 +1165,9 @@ def _extract_document_text(url: str) -> str:
         except Exception:
             logger.exception("Failed to parse PDF disclosure document: %s", url)
             return ""
+    if lower_url.endswith(".pdf"):
+        logger.warning("PDF disclosure parser dependency is unavailable; cannot extract text from %s", url)
+        return ""
     try:
         return normalize_whitespace(response.text)
     except Exception:
@@ -1106,9 +1175,14 @@ def _extract_document_text(url: str) -> str:
 
 
 def _infer_filing_type(title: str) -> str:
-    for filing_type in ["年报", "半年报", "一季报", "三季报"]:
-        if filing_type in title:
-            return filing_type
+    if any(token in title for token in ["第一季度报告", "一季度报告", "一季报"]):
+        return "一季报"
+    if any(token in title for token in ["半年度报告", "半年报", "中期报告"]):
+        return "半年报"
+    if any(token in title for token in ["第三季度报告", "三季度报告", "三季报"]):
+        return "三季报"
+    if any(token in title for token in ["年度报告", "年报"]):
+        return "年报"
     return "公告"
 
 
@@ -1136,6 +1210,49 @@ def _millis_to_iso(value: Any) -> str | None:
         return datetime.fromtimestamp(millis / 1000, tz=timezone.utc).date().isoformat()
     except Exception:
         return None
+
+
+def _prioritize_cninfo_announcements(
+    announcements: list[dict[str, Any]],
+    brief: ResearchBrief,
+    limit: int,
+) -> list[dict[str, Any]]:
+    eligible = []
+    seen_urls: set[str] = set()
+    for announcement in announcements:
+        symbol = str(announcement.get("secCode") or "")
+        if brief.instrument.symbol and symbol and symbol != brief.instrument.symbol:
+            continue
+        adjunct = str(announcement.get("adjunctUrl") or "").strip("/")
+        if not adjunct or adjunct in seen_urls:
+            continue
+        title = normalize_whitespace(re.sub(r"<[^>]+>", "", str(announcement.get("announcementTitle") or "")))
+        if "摘要" in title:
+            continue
+        seen_urls.add(adjunct)
+        filing_type = _infer_filing_type(title)
+        year_match = re.search(r"(20\d{2}|19\d{2})", title)
+        year = int(year_match.group(1)) if year_match else None
+        eligible.append((announcement, filing_type, year))
+
+    if not eligible:
+        return announcements[:limit]
+
+    selected: list[dict[str, Any]] = [eligible[0][0]]
+    current_type = eligible[0][1]
+    current_year = eligible[0][2]
+    if current_type != "公告" and current_year is not None:
+        for announcement, filing_type, year in eligible[1:]:
+            if filing_type == current_type and year == current_year - 1:
+                selected.append(announcement)
+                break
+
+    for announcement, _, _ in eligible[1:]:
+        if len(selected) >= limit:
+            break
+        if announcement not in selected:
+            selected.append(announcement)
+    return selected[:limit]
 
 
 def _cninfo_category(category: str) -> str:

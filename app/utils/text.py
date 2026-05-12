@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from html import unescape
 from typing import Callable, Iterable, TypeVar
 from urllib.parse import urlparse
@@ -24,7 +25,7 @@ def truncate_text(text: str, max_chars: int = 400) -> str:
 
 
 def normalize_name(text: str) -> str:
-    lowered = normalize_whitespace(text).lower()
+    lowered = unicodedata.normalize("NFKC", normalize_whitespace(text)).lower()
     cleaned = PUNCT_RE.sub(" ", lowered)
     return SPACE_RE.sub(" ", cleaned).strip()
 

@@ -13,20 +13,26 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.db import init_db
 from app.schemas import (
+    CompanyChatRequest,
+    CompanyChatResponse,
     InvestmentJobCreateResponse,
     InvestmentJobRequest,
     InvestmentJobStatusResponse,
     InvestmentMemoResponse,
     MarketOhlcvResponse,
+    ResearchContextResponse,
 )
+from app.services.company_chat import answer_memo_chat
 from app.services.job_service import (
     check_dependencies_health,
     create_investment_job,
+    delete_investment_job,
     get_job_market_ohlcv_response,
     get_investment_job_status,
     get_investment_memo_response,
     get_job_memo,
     get_legacy_report_response,
+    get_research_context_response,
     list_investment_jobs,
     search_job_evidence,
     wait_for_job_completion,
@@ -98,6 +104,14 @@ def get_jobs(limit: int = 20) -> list[dict[str, Any]]:
     return [item.model_dump() for item in list_investment_jobs(limit)]
 
 
+@app.delete("/investment-jobs/{job_id}")
+def delete_job(job_id: str) -> dict[str, Any]:
+    deleted = delete_investment_job(job_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Investment job not found.")
+    return {"job_id": job_id, "deleted": True}
+
+
 @app.get("/investment-jobs/{job_id}/events")
 def stream_job_events(job_id: str) -> StreamingResponse:
     if get_investment_job_status(job_id) is None:
@@ -125,6 +139,22 @@ def get_memo(memo_id: str) -> InvestmentMemoResponse:
     if memo is None:
         raise HTTPException(status_code=404, detail="Investment memo not found.")
     return memo
+
+
+@app.get("/investment-memos/{memo_id}/research-context", response_model=ResearchContextResponse)
+def get_memo_research_context(memo_id: str) -> ResearchContextResponse:
+    context = get_research_context_response(memo_id)
+    if context is None:
+        raise HTTPException(status_code=404, detail="Research context not found for the investment memo.")
+    return context
+
+
+@app.post("/investment-memos/{memo_id}/chat", response_model=CompanyChatResponse)
+def chat_with_memo(memo_id: str, request: CompanyChatRequest) -> CompanyChatResponse:
+    response = answer_memo_chat(memo_id, request)
+    if response is None:
+        raise HTTPException(status_code=404, detail="Research context not found for the investment memo.")
+    return response
 
 
 @app.get("/investment-jobs/{job_id}/evidence")
@@ -198,6 +228,11 @@ def get_jobs_legacy(limit: int = 20) -> list[dict[str, Any]]:
         payload["report_id"] = payload.pop("memo_id", None)
         items.append(payload)
     return items
+
+
+@app.delete("/research-jobs/{job_id}", deprecated=True)
+def delete_job_legacy(job_id: str) -> dict[str, Any]:
+    return delete_job(job_id)
 
 
 @app.get("/research-jobs/{job_id}/events", deprecated=True)

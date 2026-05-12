@@ -9,6 +9,8 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 3000,
     proxy: {
+      '/investment-jobs': { target: API_TARGET, changeOrigin: true },
+      '/investment-memos': { target: API_TARGET, changeOrigin: true },
       '/research-jobs': { target: API_TARGET, changeOrigin: true },
       '/reports':        { target: API_TARGET, changeOrigin: true },
       '/analyze':        { target: API_TARGET, changeOrigin: true },

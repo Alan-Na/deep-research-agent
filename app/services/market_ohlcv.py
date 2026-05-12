@@ -333,15 +333,21 @@ def _upsert_ohlcv_rows(
                 trade_date = trade_date.date()
             if isinstance(trade_date, datetime):
                 trade_date = trade_date.date()
+            open_price = _to_float(bar.get("open"))
+            high_price = _to_float(bar.get("high"))
+            low_price = _to_float(bar.get("low"))
+            close_price = _to_float(bar.get("close"))
+            if None in {open_price, high_price, low_price, close_price}:
+                continue
             existing = rows_by_date.get(trade_date)
             values = {
                 "exchange": exchange,
                 "display_name": display_name,
                 "provider": provider,
-                "open_price": float(bar["open"]),
-                "high_price": float(bar["high"]),
-                "low_price": float(bar["low"]),
-                "close_price": float(bar["close"]),
+                "open_price": open_price,
+                "high_price": high_price,
+                "low_price": low_price,
+                "close_price": close_price,
                 "volume": _to_float(bar.get("volume")),
                 "amount": _to_float(bar.get("amount")),
             }
@@ -367,13 +373,19 @@ def _frame_to_bars(frame: pd.DataFrame) -> list[OhlcvBar]:
         return []
     bars: list[OhlcvBar] = []
     for row in frame.to_dict(orient="records"):
+        open_price = _to_float(row.get("open"))
+        high_price = _to_float(row.get("high"))
+        low_price = _to_float(row.get("low"))
+        close_price = _to_float(row.get("close"))
+        if None in {open_price, high_price, low_price, close_price}:
+            continue
         bars.append(
             OhlcvBar(
                 date=str(row["date"]),
-                open=round(float(row["open"]), 4),
-                high=round(float(row["high"]), 4),
-                low=round(float(row["low"]), 4),
-                close=round(float(row["close"]), 4),
+                open=round(open_price, 4),
+                high=round(high_price, 4),
+                low=round(low_price, 4),
+                close=round(close_price, 4),
                 volume=_to_float(row.get("volume")),
                 amount=_to_float(row.get("amount")),
             )

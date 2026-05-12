@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import pandas as pd
@@ -22,6 +23,24 @@ from app.utils.logging import get_logger
 from app.utils.text import normalize_name, truncate_text
 
 logger = get_logger(__name__)
+
+A_SHARE_SEED_INSTRUMENTS = {
+    "云天化": ("600096", "云天化"),
+    "宁德时代": ("300750", "宁德时代"),
+    "贵州茅台": ("600519", "贵州茅台"),
+    "比亚迪": ("002594", "比亚迪"),
+    "招商银行": ("600036", "招商银行"),
+    "中国平安": ("601318", "中国平安"),
+    "五粮液": ("000858", "五粮液"),
+    "隆基绿能": ("601012", "隆基绿能"),
+    "国际复材": ("301526", "国际复材"),
+    "万科A": ("000002", "万科A"),
+    "赛力斯": ("601127", "赛力斯"),
+    "中际旭创": ("300308", "中际旭创"),
+    "工业富联": ("601138", "工业富联"),
+    "寒武纪": ("688256", "寒武纪"),
+    "利通电子": ("603629", "利通电子"),
+}
 
 
 class YFinancePriceAdapter(PriceDataAdapter):
@@ -74,10 +93,14 @@ class YFinancePriceAdapter(PriceDataAdapter):
 class AksharePriceAdapter(PriceDataAdapter):
     # 中文注释：通过 A 股名称映射到代码，再抓取最近日线。
     def resolve(self, company_name: str) -> ResolvedInstrument | None:
+        seeded = _resolve_seed_a_share(company_name)
+        if seeded is not None:
+            return seeded
+
         if ak is None:
             return None
 
-        mapping_df = ak.stock_info_a_code_name()
+        mapping_df = _load_a_share_name_code_mapping()
         if mapping_df is None or mapping_df.empty:
             return None
 
@@ -98,6 +121,8 @@ class AksharePriceAdapter(PriceDataAdapter):
                 best_row = row
                 break
             if target and target in current_name:
+                best_row = row
+            if target and current_name and current_name in target:
                 best_row = row
 
         if best_row is None:
@@ -125,6 +150,58 @@ class AksharePriceAdapter(PriceDataAdapter):
         if history is None or history.empty:
             return pd.DataFrame()
         return history.tail(lookback_days)
+
+
+def _resolve_seed_a_share(company_name: str) -> ResolvedInstrument | None:
+    code_match = re.search(r"\b(\d{6})\b", company_name)
+    if code_match:
+        code = code_match.group(1)
+        return _resolved_a_share(code, company_name)
+
+    target = normalize_name(company_name)
+    for alias, (code, display_name) in A_SHARE_SEED_INSTRUMENTS.items():
+        normalized_alias = normalize_name(alias)
+        if target == normalized_alias or (target and normalized_alias in target):
+            return _resolved_a_share(code, display_name)
+    return None
+
+
+def _resolved_a_share(code: str, display_name: str) -> ResolvedInstrument:
+    raw_code = str(code).zfill(6)
+    symbol = f"sh{raw_code}" if raw_code.startswith(("5", "6", "9")) else f"sz{raw_code}"
+    return ResolvedInstrument(
+        symbol=symbol,
+        display_name=display_name,
+        market="A_SHARE",
+        exchange="A_SHARE",
+    )
+
+
+def _load_a_share_name_code_mapping() -> pd.DataFrame | None:
+    if ak is None:
+        return None
+    try:
+        return ak.stock_info_a_code_name()
+    except Exception as exc:
+        logger.warning("Full A-share code/name mapping failed, trying exchange-level fallbacks: %s", exc)
+
+    frames: list[pd.DataFrame] = []
+    for loader_name in ("stock_info_sz_name_code", "stock_info_sh_name_code"):
+        loader = getattr(ak, loader_name, None)
+        if loader is None:
+            continue
+        try:
+            frame = loader()
+        except Exception as exc:
+            logger.warning("%s fallback failed: %s", loader_name, exc)
+            continue
+        if frame is None or frame.empty:
+            continue
+        renamed = frame.rename(columns={"A股代码": "code", "A股简称": "name"})
+        frames.append(renamed)
+    if not frames:
+        return None
+    return pd.concat(frames, ignore_index=True, sort=False)
 
 
 def _detect_close_column(df: pd.DataFrame) -> str:

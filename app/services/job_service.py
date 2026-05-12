@@ -30,6 +30,8 @@ from app.schemas import (
     InvestmentMemo,
     InvestmentMemoResponse,
     MarketOhlcvResponse,
+    ResearchContextResponse,
+    UnifiedResearchContext,
 )
 from app.services.market_ohlcv import get_job_market_ohlcv
 from app.services.redis_queue import enqueue_job, get_redis_client, publish_job_event
@@ -167,6 +169,15 @@ def list_investment_jobs(limit: int = 20) -> list[InvestmentJobListItem]:
         ]
 
 
+def delete_investment_job(job_id: str) -> bool:
+    with get_db_session() as session:
+        row = session.get(InvestmentJobRecord, job_id)
+        if row is None:
+            return False
+        session.delete(row)
+        return True
+
+
 def get_investment_memo_response(memo_id: str) -> InvestmentMemoResponse | None:
     with get_db_session() as session:
         record = session.get(InvestmentMemoRecord, memo_id)
@@ -177,6 +188,24 @@ def get_investment_memo_response(memo_id: str) -> InvestmentMemoResponse | None:
             job_id=record.job_id,
             memo=InvestmentMemo.model_validate(record.payload),
         )
+
+
+def get_research_context_response(memo_id: str) -> ResearchContextResponse | None:
+    response = get_investment_memo_response(memo_id)
+    if response is None:
+        return None
+    context = response.memo.research_context
+    if context is None:
+        raw = response.memo.agent_outputs.get("_research_context")
+        if not isinstance(raw, dict):
+            return None
+        context = UnifiedResearchContext.model_validate(raw)
+    return ResearchContextResponse(
+        memo_id=response.memo_id,
+        job_id=response.job_id,
+        research_context=context,
+        llm_context_document=response.memo.llm_context_document or context.llm_context_document,
+    )
 
 
 def search_job_evidence(job_id: str, agent_name: str | None = None, category: str | None = None) -> EvidenceSearchResponse | None:
@@ -520,5 +549,6 @@ create_research_job = create_investment_job
 process_research_job = process_investment_job
 get_research_job_status = get_investment_job_status
 list_research_jobs = list_investment_jobs
+delete_research_job = delete_investment_job
 get_report_response = get_legacy_report_response
 get_job_report = get_job_memo

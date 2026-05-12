@@ -33,7 +33,7 @@ class Settings:
     agent_max_steps: int = int(os.getenv("AGENT_MAX_STEPS", "5"))
     agent_timeout_seconds: int = int(os.getenv("AGENT_TIMEOUT_SECONDS", "45"))
     price_lookback_days: int = int(os.getenv("PRICE_LOOKBACK_DAYS", "90"))
-    market_chart_lookback_days: int = int(os.getenv("MARKET_CHART_LOOKBACK_DAYS", "30"))
+    market_chart_lookback_days: int = int(os.getenv("MARKET_CHART_LOOKBACK_DAYS", "60"))
     news_days: int = int(os.getenv("NEWS_DAYS", "14"))
     max_news_articles: int = int(os.getenv("MAX_NEWS_ARTICLES", "20"))
     enable_finbert_sentiment: bool = os.getenv("ENABLE_FINBERT_SENTIMENT", "false").lower() in {"1", "true", "yes"}

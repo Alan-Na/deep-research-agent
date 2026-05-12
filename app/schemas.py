@@ -407,6 +407,48 @@ class AgentResult(BaseModel):
     citations_count: int = 0
 
 
+class UnifiedResearchFinding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    agent_name: str
+    category: str
+    summary: str
+    sentiment: SentimentName | None = None
+    impact_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    confidence_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    evidence: Dict[str, Any] = Field(default_factory=dict)
+    source_refs: List[str] = Field(default_factory=list)
+
+
+class UnifiedAgentResearch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    agent_name: str
+    status: AgentStatus
+    signal_bias: SentimentName = "neutral"
+    summary: str
+    key_points: List[str] = Field(default_factory=list)
+    findings: List[UnifiedResearchFinding] = Field(default_factory=list)
+    metrics: Dict[str, Any] = Field(default_factory=dict)
+    warnings: List[str] = Field(default_factory=list)
+    payload_keys: List[str] = Field(default_factory=list)
+
+
+class UnifiedResearchContext(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    company_name: str
+    market: MarketName
+    instrument: InstrumentInfo = Field(default_factory=InstrumentInfo)
+    research_brief_notes: List[str] = Field(default_factory=list)
+    agents: Dict[str, UnifiedAgentResearch] = Field(default_factory=dict)
+    cross_agent: Dict[str, Any] = Field(default_factory=dict)
+    events: List[EventItem] = Field(default_factory=list)
+    coverage: Dict[str, Any] = Field(default_factory=dict)
+    llm_context_document: str = ""
+
+
 class Citation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -452,6 +494,8 @@ class InvestmentMemo(BaseModel):
     watch_items: List[str] = Field(default_factory=list)
     limitations: List[str] = Field(default_factory=list)
     agent_outputs: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    research_context: UnifiedResearchContext | None = None
+    llm_context_document: str = ""
     events: List[EventItem] = Field(default_factory=list)
     citations: List[Citation] = Field(default_factory=list)
     critic_summary: CriticSummary | None = None
@@ -520,6 +564,58 @@ class InvestmentMemoResponse(BaseModel):
     memo_id: str
     job_id: str
     memo: InvestmentMemo
+
+
+class ResearchContextResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    memo_id: str
+    job_id: str
+    research_context: UnifiedResearchContext
+    llm_context_document: str
+
+
+class ChatHistoryMessage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class CompanyChatRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    question: str = Field(min_length=1)
+    history: List[ChatHistoryMessage] = Field(default_factory=list)
+
+
+class CompanyChatToolCall(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    arguments: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CompanyChatSource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    agent_name: str
+    title: str
+    snippet: str
+    url: str | None = None
+    date: str | None = None
+
+
+class CompanyChatResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    memo_id: str
+    job_id: str
+    company_name: str
+    answer: str
+    rejected: bool = False
+    tool_calls: List[CompanyChatToolCall] = Field(default_factory=list)
+    sources: List[CompanyChatSource] = Field(default_factory=list)
 
 
 class EvidenceResponseItem(BaseModel):

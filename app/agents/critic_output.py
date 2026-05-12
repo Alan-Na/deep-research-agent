@@ -7,8 +7,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.llm import get_chat_model, is_llm_available
+from app.research.context import build_unified_research_context
 from app.research.retrieval import bind_citations_to_memo
-from app.schemas import EventItem, InstrumentInfo, InvestmentMemo, MarketSnapshot, ResearchBrief, StanceName
+from app.schemas import EventItem, InstrumentInfo, InvestmentMemo, MarketSnapshot, ResearchBrief, StanceName, UnifiedResearchContext
 from app.utils.text import truncate_text
 
 CRITIC_OUTPUT_SYSTEM_PROMPT = """
@@ -16,6 +17,7 @@ CRITIC_OUTPUT_SYSTEM_PROMPT = """
 
 规则：
 - 只能使用提供的 research brief、agent outputs、events、coverage。
+- 优先使用 unified research context document；它是三个研究 agent 输出的规范化版本。
 - 不要使用外部知识。
 - 必须输出明确 stance: bullish / neutral / bearish。
 - 如果证据偏弱、agent 互相冲突、或关键信号不足，优先输出 neutral。
@@ -27,8 +29,8 @@ CRITIC_OUTPUT_USER_PROMPT = """
 Research brief:
 {brief_payload}
 
-Agent outputs:
-{agent_payload}
+Unified research context document:
+{research_context_document}
 
 Coverage:
 {coverage_payload}
@@ -60,7 +62,8 @@ def run_critic_output_agent(
     coverage: dict[str, Any],
     chunks: list[Any],
 ) -> InvestmentMemo:
-    draft = _draft_memo_with_llm(brief, agent_results, events, coverage) if is_llm_available() else None
+    research_context = build_unified_research_context(brief, agent_results, events, coverage)
+    draft = _draft_memo_with_llm(brief, research_context, events, coverage) if is_llm_available() else None
     if draft is None:
         draft = _heuristic_draft(brief, agent_results, events, coverage)
 
@@ -80,7 +83,15 @@ def run_critic_output_agent(
         market_snapshot=market_snapshot,
         watch_items=draft.watch_items,
         limitations=list(dict.fromkeys([*(draft.limitations or []), *(coverage.get("warnings") or [])]))[:10],
-        agent_outputs={name: result.payload for name, result in agent_results.items()},
+        agent_outputs={
+            name: {
+                **result.payload,
+                "unified_research": research_context.agents[name].model_dump() if name in research_context.agents else {},
+            }
+            for name, result in agent_results.items()
+        },
+        research_context=research_context,
+        llm_context_document=research_context.llm_context_document,
         events=events,
     )
     return bind_citations_to_memo(memo, chunks, coverage)
@@ -88,7 +99,7 @@ def run_critic_output_agent(
 
 def _draft_memo_with_llm(
     brief: ResearchBrief,
-    agent_results: dict[str, Any],
+    research_context: UnifiedResearchContext,
     events: list[EventItem],
     coverage: dict[str, Any],
 ) -> InvestmentMemoDraft | None:
@@ -98,22 +109,12 @@ def _draft_memo_with_llm(
             ("human", CRITIC_OUTPUT_USER_PROMPT),
         ]
     )
-    simplified_agent_outputs = {
-        name: {
-            "summary": result.summary,
-            "status": result.status,
-            "key_points": result.key_points[:5],
-            "payload": result.payload,
-            "warning": result.warning,
-        }
-        for name, result in agent_results.items()
-    }
     try:
         llm = get_chat_model(temperature=0.1)
         structured = llm.with_structured_output(InvestmentMemoDraft, method="json_schema")
         payload = {
             "brief_payload": brief.model_dump_json(indent=2),
-            "agent_payload": json.dumps(simplified_agent_outputs, ensure_ascii=False, indent=2),
+            "research_context_document": research_context.llm_context_document,
             "coverage_payload": json.dumps(coverage, ensure_ascii=False, indent=2),
             "events_payload": json.dumps([item.model_dump() for item in events[:10]], ensure_ascii=False, indent=2),
         }

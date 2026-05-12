@@ -189,6 +189,14 @@ def _load_price_history(
     high_col = _pick_column(history, ["high", "最高", "High"])
     low_col = _pick_column(history, ["low", "最低", "Low"])
 
+    history = history.copy()
+    for column in [close_col, volume_col, high_col, low_col]:
+        if column:
+            history[column] = pd.to_numeric(history[column], errors="coerce")
+    history = history.dropna(subset=[close_col])
+    if history.empty:
+        return {"summary": "Price history contained no usable close prices."}
+
     closes = history[close_col].astype(float)
     returns = closes.pct_change().dropna()
     latest_close = round(float(closes.iloc[-1]), 4)

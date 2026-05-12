@@ -180,11 +180,33 @@ export async function listJobs(limit = 40) {
   return Array.isArray(raw) ? raw.map(transformJobResponse) : raw
 }
 
+export async function deleteJob(jobId) {
+  const res = await fetch(`${BASE}/research-jobs/${jobId}`, { method: 'DELETE' })
+  if (!res.ok && res.status !== 404) {
+    const msg = await res.text().catch(() => 'Failed to delete job')
+    throw new Error(msg)
+  }
+  return res.status !== 404
+}
+
 export async function getReport(reportId) {
   const res = await fetch(`${BASE}/reports/${reportId}`)
   if (!res.ok) throw new Error('Failed to fetch report')
   const raw = await res.json()
   return transformReportResponse(raw)
+}
+
+export async function chatWithReport(reportId, question, history = []) {
+  const res = await fetch(`${BASE}/investment-memos/${reportId}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question, history }),
+  })
+  if (!res.ok) {
+    const msg = await res.text().catch(() => 'Chat request failed')
+    throw new Error(msg)
+  }
+  return res.json()
 }
 
 export async function getOhlcv(jobId) {
