@@ -120,6 +120,7 @@ class FinancialSnapshot(BaseModel):
     total_debt: float | None = None
     total_liabilities: float | None = None
     shareholders_equity: float | None = None
+    goodwill: float | None = None
     operating_cash_flow: float | None = None
     capital_expenditure: float | None = None
     free_cash_flow: float | None = None
@@ -183,6 +184,70 @@ class FinancialScore(BaseModel):
     score_interpretation: str = "This score reflects financial health only, not valuation attractiveness."
 
 
+class FinancialFilingDocument(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = None
+    filing_type: str | None = None
+    period: str | None = None
+    filed_at: str | None = None
+    provider: str | None = None
+    url: str | None = None
+
+
+class FinancialFilingCoverage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_document_mix: List[str] = Field(default_factory=lambda: ["latest_two_annual_reports", "latest_half_year_report", "latest_quarterly_or_latest_report"])
+    collected_document_count: int = 0
+    parsed_period_count: int = 0
+    annual_report_count: int = 0
+    interim_report_count: int = 0
+    latest_period: str | None = None
+    latest_filing_type: str | None = None
+    coverage_status: Literal["complete", "partial", "insufficient"] = "insufficient"
+    documents: List[FinancialFilingDocument] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+
+
+class FinancialPeriodAnalysis(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    period: str | None = None
+    filing_type: str | None = None
+    filed_at: str | None = None
+    currency: str | None = None
+    unit: str | None = None
+    document: FinancialFilingDocument = Field(default_factory=FinancialFilingDocument)
+    financial_snapshot: FinancialSnapshot = Field(default_factory=FinancialSnapshot)
+    key_metrics: FinancialKeyMetrics = Field(default_factory=FinancialKeyMetrics)
+    data_quality: FinancialDataQuality = Field(default_factory=FinancialDataQuality)
+    metric_warnings: List[FinancialMetricWarning] = Field(default_factory=list)
+
+
+class FinancialTrendItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    metric: str
+    direction: Literal["improving", "stable", "deteriorating", "mixed", "unknown"] = "unknown"
+    current_value: float | None = None
+    previous_value: float | None = None
+    change: float | None = None
+    periods: List[str] = Field(default_factory=list)
+    warning: str | None = None
+
+
+class FinancialTrendAnalysis(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    periods_covered: List[str] = Field(default_factory=list)
+    margin_trends: List[FinancialTrendItem] = Field(default_factory=list)
+    working_capital_trends: List[FinancialTrendItem] = Field(default_factory=list)
+    cash_flow_trends: List[FinancialTrendItem] = Field(default_factory=list)
+    balance_sheet_trends: List[FinancialTrendItem] = Field(default_factory=list)
+    narrative: str = ""
+
+
 class FinancialStatementAnalysis(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -191,6 +256,9 @@ class FinancialStatementAnalysis(BaseModel):
     period: str | None = None
     currency: str | None = None
     unit: str | None = None
+    filing_coverage: FinancialFilingCoverage = Field(default_factory=FinancialFilingCoverage)
+    period_analyses: List[FinancialPeriodAnalysis] = Field(default_factory=list)
+    trend_analysis: FinancialTrendAnalysis = Field(default_factory=FinancialTrendAnalysis)
     data_quality: FinancialDataQuality = Field(default_factory=FinancialDataQuality)
     financial_snapshot: FinancialSnapshot = Field(default_factory=FinancialSnapshot)
     key_metrics: FinancialKeyMetrics = Field(default_factory=FinancialKeyMetrics)

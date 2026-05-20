@@ -15,12 +15,17 @@ from app.schemas import (
     EvidenceItem,
     FinancialAssessment,
     FinancialDataQuality,
+    FinancialFilingCoverage,
+    FinancialFilingDocument,
     FinancialKeyMetrics,
     FinancialMetricWarning,
+    FinancialPeriodAnalysis,
     FinancialScore,
     FinancialSignal,
     FinancialSnapshot,
     FinancialStatementAnalysis,
+    FinancialTrendAnalysis,
+    FinancialTrendItem,
     ResearchBrief,
 )
 from app.tools.filing import SecEdgarAdapter
@@ -46,6 +51,7 @@ BALANCE_FIELDS = {
     "total_debt",
     "total_liabilities",
     "shareholders_equity",
+    "goodwill",
 }
 CASH_FLOW_FIELDS = {"operating_cash_flow", "capital_expenditure"}
 FINANCIAL_SNAPSHOT_FIELDS = [
@@ -61,6 +67,7 @@ FINANCIAL_SNAPSHOT_FIELDS = [
     "total_debt",
     "total_liabilities",
     "shareholders_equity",
+    "goodwill",
     "operating_cash_flow",
     "capital_expenditure",
     "free_cash_flow",
@@ -79,6 +86,7 @@ FIELD_ALIASES = {
     "total_debt": ["有息负债", "总债务", "total debt", "total borrowings", "interest-bearing debt"],
     "total_liabilities": ["负债合计", "总负债", "total liabilities"],
     "shareholders_equity": ["归属于母公司所有者权益（或股东权益）合计", "归属于母公司所有者权益合计", "所有者权益（或股东权益）合计", "所有者权益合计", "股东权益合计", "shareholders' equity", "shareholders equity", "stockholders' equity", "total equity"],
+    "goodwill": ["商誉", "goodwill"],
     "operating_cash_flow": ["经营活动产生的现金流量净额", "经营活动现金流量净额", "operating cash flow", "net cash provided by operating activities", "cash provided by operating activities"],
     "capital_expenditure": ["购建固定资产、无形资产和其他长期资产支付的现金", "购建固定资产", "资本开支", "资本性支出", "capital expenditure", "capital expenditures", "purchase of property and equipment", "purchases of property and equipment", "capex"],
 }
@@ -135,7 +143,7 @@ class AShareDisclosureProvider:
     base_url = "http://www.cninfo.com.cn/new/hisAnnouncement/query"
     static_prefix = "http://static.cninfo.com.cn/"
 
-    def fetch_recent_documents(self, brief: ResearchBrief, limit: int = 3) -> list[FilingDocument]:
+    def fetch_recent_documents(self, brief: ResearchBrief, limit: int = 4) -> list[FilingDocument]:
         query = brief.instrument.symbol or brief.company_name
         categories = ["年报", "半年报", "一季报", "三季报"]
         announcements: list[dict[str, Any]] = []
@@ -202,8 +210,8 @@ class SecProviderRegistry:
     def __init__(self) -> None:
         self.sec = SecEdgarAdapter()
 
-    def fetch_recent_documents(self, brief: ResearchBrief, limit: int = 3) -> list[FilingDocument]:
-        filings = self.sec.fetch_recent_filings(brief.company_name, ticker=brief.instrument.symbol, limit=limit)
+    def fetch_recent_documents(self, brief: ResearchBrief, limit: int = 4) -> list[FilingDocument]:
+        filings = self.sec.fetch_recent_filings(brief.company_name, ticker=brief.instrument.symbol, limit=max(limit, 4))
         return [
             FilingDocument(
                 provider="sec",
@@ -269,10 +277,11 @@ def _discover_documents(
     sec_registry: SecProviderRegistry,
     brief: ResearchBrief,
 ) -> dict[str, Any]:
+    target_limit = max(3, min(get_settings().filing_max_documents, 4))
     if brief.market == "A_SHARE":
-        documents = a_share_provider.fetch_recent_documents(brief, limit=get_settings().filing_max_documents)
+        documents = a_share_provider.fetch_recent_documents(brief, limit=target_limit)
     elif brief.market == "US":
-        documents = sec_registry.fetch_recent_documents(brief, limit=get_settings().filing_max_documents)
+        documents = sec_registry.fetch_recent_documents(brief, limit=target_limit)
     else:
         documents = []
 
@@ -291,6 +300,7 @@ def _parse_financial_statements(
     raw_documents = scratchpad.get("payload", {}).get("documents") or []
     parsed_periods = [_parse_document_financials(brief, item) for item in raw_documents]
     parsed_periods = [item for item in parsed_periods if item]
+    parsed_periods = sorted(parsed_periods, key=_period_filed_at, reverse=True)
     current_period = parsed_periods[0] if parsed_periods else _empty_period(brief.company_name)
     same_period_last_year = _select_same_period_last_year(current_period, parsed_periods[1:])
     previous_period = parsed_periods[1] if len(parsed_periods) > 1 else None
@@ -313,29 +323,11 @@ def _calculate_key_metrics(
     scratchpad: dict[str, Any],
 ) -> dict[str, Any]:
     current = scratchpad.get("payload", {}).get("current_period") or _empty_period(brief.company_name)
+    parsed_periods = scratchpad.get("payload", {}).get("parsed_financial_periods") or []
     same_last_year = scratchpad.get("payload", {}).get("same_period_last_year")
-    snapshot, current_values = _build_financial_snapshot(current)
-    last_year_values = _flatten_period_values(same_last_year) if same_last_year else {}
-    warnings: list[FinancialMetricWarning] = []
-
-    metrics = FinancialKeyMetrics(
-        revenue_yoy_growth=_growth_metric("revenue_yoy_growth", current_values.get("revenue"), last_year_values.get("revenue"), warnings),
-        operating_income_yoy_growth=_growth_metric("operating_income_yoy_growth", current_values.get("operating_income"), last_year_values.get("operating_income"), warnings),
-        net_income_yoy_growth=_growth_metric("net_income_yoy_growth", current_values.get("net_income"), last_year_values.get("net_income"), warnings),
-        operating_cash_flow_yoy_growth=_growth_metric("operating_cash_flow_yoy_growth", current_values.get("operating_cash_flow"), last_year_values.get("operating_cash_flow"), warnings),
-        accounts_receivable_yoy_growth=_growth_metric("accounts_receivable_yoy_growth", current_values.get("accounts_receivable"), last_year_values.get("accounts_receivable"), warnings),
-        inventory_yoy_growth=_growth_metric("inventory_yoy_growth", current_values.get("inventory"), last_year_values.get("inventory"), warnings),
-        gross_margin=_safe_divide_metric("gross_margin", current_values.get("gross_profit"), current_values.get("revenue"), warnings),
-        operating_margin=_safe_divide_metric("operating_margin", current_values.get("operating_income"), current_values.get("revenue"), warnings),
-        net_margin=_safe_divide_metric("net_margin", current_values.get("net_income"), current_values.get("revenue"), warnings),
-        ocf_to_net_income=_safe_divide_metric("ocf_to_net_income", current_values.get("operating_cash_flow"), current_values.get("net_income"), warnings),
-        fcf_margin=_safe_divide_metric("fcf_margin", snapshot.free_cash_flow, current_values.get("revenue"), warnings),
-        debt_to_equity=_safe_divide_metric("debt_to_equity", current_values.get("total_debt"), current_values.get("shareholders_equity"), warnings),
-        cash_to_debt=_safe_divide_metric("cash_to_debt", current_values.get("cash_and_equivalents"), current_values.get("total_debt"), warnings, zero_warning="no_reported_debt_or_debt_missing"),
-    )
-    previous_operating_margin = _safe_divide(last_year_values.get("operating_income"), last_year_values.get("revenue"))
-    if metrics.operating_margin is not None and previous_operating_margin is not None:
-        metrics = metrics.model_copy(update={"operating_margin_change": round(metrics.operating_margin - previous_operating_margin, 6)})
+    snapshot, metrics, warnings = _calculate_metrics_for_period(current, same_last_year)
+    period_analyses = _build_period_analyses(parsed_periods)
+    trend_analysis = _build_trend_analysis(period_analyses)
 
     return {
         "summary": "Calculated key financial metrics from extracted statement data.",
@@ -343,6 +335,8 @@ def _calculate_key_metrics(
             "financial_snapshot": snapshot.model_dump(),
             "key_metrics": metrics.model_dump(),
             "metric_warnings": [item.model_dump() for item in warnings],
+            "period_analyses": [item.model_dump() for item in period_analyses],
+            "trend_analysis": trend_analysis.model_dump(),
         },
         "evidence": _build_metric_evidence(current, snapshot, metrics),
     }
@@ -380,6 +374,9 @@ def _build_structured_output(
     risks = [FinancialSignal.model_validate(item) for item in payload.get("financial_risks") or []]
     strengths = [FinancialSignal.model_validate(item) for item in payload.get("financial_strengths") or []]
     warnings = [FinancialMetricWarning.model_validate(item) for item in payload.get("metric_warnings") or []]
+    period_analyses = [FinancialPeriodAnalysis.model_validate(item) for item in payload.get("period_analyses") or []]
+    trend_analysis = FinancialTrendAnalysis.model_validate(payload.get("trend_analysis") or {})
+    filing_coverage = _build_filing_coverage(documents, payload.get("parsed_financial_periods") or [])
     data_quality = _build_data_quality(snapshot, warnings)
     score = _build_financial_score(metrics, risks)
     assessment = _build_financial_assessment(data_quality, score, strengths, risks)
@@ -388,6 +385,9 @@ def _build_structured_output(
         period=current.get("period"),
         currency=current.get("currency"),
         unit=current.get("unit"),
+        filing_coverage=filing_coverage,
+        period_analyses=period_analyses,
+        trend_analysis=trend_analysis,
         data_quality=data_quality,
         financial_snapshot=snapshot,
         key_metrics=metrics,
@@ -443,6 +443,9 @@ def _finalize_filing_agent(
         "provider": provider,
         "documents": documents,
         "financial_statement_analysis": analysis.model_dump() if analysis else None,
+        "financial_periods": [item.model_dump() for item in analysis.period_analyses] if analysis else [],
+        "financial_trend_analysis": analysis.trend_analysis.model_dump() if analysis else {},
+        "filing_coverage": analysis.filing_coverage.model_dump() if analysis else {},
         "structured_facts": payload.get("structured_facts") or {},
         "memo_insights": payload.get("memo_insights") or {},
         "signal_bias": payload.get("signal_bias", "neutral"),
@@ -654,10 +657,22 @@ def _infer_period(title: str, filed_at: str | None, filing_type: str) -> str | N
         return f"{year}FY"
     if filing_type == "一季报" or "q1" in title.lower():
         return f"{year}Q1"
-    if filing_type in {"半年报", "10-Q"} and ("半年" in title or "quarter" not in title.lower()):
+    if filing_type == "半年报" or "半年" in title:
         return f"{year}H1"
     if filing_type == "三季报" or "q3" in title.lower():
         return f"{year}Q3"
+    if filing_type == "10-Q":
+        try:
+            filed_month = int(str(filed_at or "")[5:7])
+        except Exception:
+            filed_month = 0
+        if filed_month and filed_month <= 5:
+            return f"{year}Q1"
+        if filed_month and filed_month <= 8:
+            return f"{year}Q2"
+        if filed_month:
+            return f"{year}Q3"
+        return f"{year}Q"
     return year
 
 
@@ -687,6 +702,10 @@ def _select_same_period_last_year(current_period: dict[str, Any], candidates: li
     return None
 
 
+def _period_filed_at(period: dict[str, Any]) -> str:
+    return str((period.get("document") or {}).get("filed_at") or "")
+
+
 def _flatten_period_values(period: dict[str, Any] | None) -> dict[str, float | None]:
     if not period:
         return {}
@@ -694,6 +713,165 @@ def _flatten_period_values(period: dict[str, Any] | None) -> dict[str, float | N
     for statement in ("income_statement", "balance_sheet", "cash_flow_statement"):
         values.update(period.get(statement) or {})
     return values
+
+
+def _calculate_metrics_for_period(
+    period: dict[str, Any],
+    same_period_last_year: dict[str, Any] | None,
+) -> tuple[FinancialSnapshot, FinancialKeyMetrics, list[FinancialMetricWarning]]:
+    snapshot, current_values = _build_financial_snapshot(period)
+    last_year_values = _flatten_period_values(same_period_last_year) if same_period_last_year else {}
+    warnings: list[FinancialMetricWarning] = []
+
+    metrics = FinancialKeyMetrics(
+        revenue_yoy_growth=_growth_metric("revenue_yoy_growth", current_values.get("revenue"), last_year_values.get("revenue"), warnings),
+        operating_income_yoy_growth=_growth_metric("operating_income_yoy_growth", current_values.get("operating_income"), last_year_values.get("operating_income"), warnings),
+        net_income_yoy_growth=_growth_metric("net_income_yoy_growth", current_values.get("net_income"), last_year_values.get("net_income"), warnings),
+        operating_cash_flow_yoy_growth=_growth_metric("operating_cash_flow_yoy_growth", current_values.get("operating_cash_flow"), last_year_values.get("operating_cash_flow"), warnings),
+        accounts_receivable_yoy_growth=_growth_metric("accounts_receivable_yoy_growth", current_values.get("accounts_receivable"), last_year_values.get("accounts_receivable"), warnings),
+        inventory_yoy_growth=_growth_metric("inventory_yoy_growth", current_values.get("inventory"), last_year_values.get("inventory"), warnings),
+        gross_margin=_safe_divide_metric("gross_margin", current_values.get("gross_profit"), current_values.get("revenue"), warnings),
+        operating_margin=_safe_divide_metric("operating_margin", current_values.get("operating_income"), current_values.get("revenue"), warnings),
+        net_margin=_safe_divide_metric("net_margin", current_values.get("net_income"), current_values.get("revenue"), warnings),
+        ocf_to_net_income=_safe_divide_metric("ocf_to_net_income", current_values.get("operating_cash_flow"), current_values.get("net_income"), warnings),
+        fcf_margin=_safe_divide_metric("fcf_margin", snapshot.free_cash_flow, current_values.get("revenue"), warnings),
+        debt_to_equity=_safe_divide_metric("debt_to_equity", current_values.get("total_debt"), current_values.get("shareholders_equity"), warnings),
+        cash_to_debt=_safe_divide_metric(
+            "cash_to_debt",
+            current_values.get("cash_and_equivalents"),
+            current_values.get("total_debt"),
+            warnings,
+            zero_warning="no_reported_debt_or_debt_missing",
+        ),
+    )
+    previous_operating_margin = _safe_divide(last_year_values.get("operating_income"), last_year_values.get("revenue"))
+    if metrics.operating_margin is not None and previous_operating_margin is not None:
+        metrics = metrics.model_copy(update={"operating_margin_change": round(metrics.operating_margin - previous_operating_margin, 6)})
+    return snapshot, metrics, warnings
+
+
+def _build_period_analyses(parsed_periods: list[dict[str, Any]]) -> list[FinancialPeriodAnalysis]:
+    period_analyses: list[FinancialPeriodAnalysis] = []
+    for period in parsed_periods:
+        comparison = _select_same_period_last_year(period, [item for item in parsed_periods if item is not period])
+        snapshot, metrics, warnings = _calculate_metrics_for_period(period, comparison)
+        document = period.get("document") or {}
+        data_quality = _build_data_quality(snapshot, warnings)
+        period_analyses.append(
+            FinancialPeriodAnalysis(
+                period=period.get("period"),
+                filing_type=document.get("filing_type"),
+                filed_at=document.get("filed_at"),
+                currency=period.get("currency"),
+                unit=period.get("unit"),
+                document=_financial_document(period),
+                financial_snapshot=snapshot,
+                key_metrics=metrics,
+                data_quality=data_quality,
+                metric_warnings=warnings,
+            )
+        )
+    return period_analyses
+
+
+def _build_trend_analysis(period_analyses: list[FinancialPeriodAnalysis]) -> FinancialTrendAnalysis:
+    annual_periods = [item for item in period_analyses if item.filing_type in {"年报", "10-K", "20-F", "40-F"}]
+    trend_base = annual_periods[:2] if len(annual_periods) >= 2 else period_analyses[:2]
+    periods_covered = [item.period for item in period_analyses if item.period]
+    margin_trends = [
+        _trend_item("gross_margin", trend_base, lambda item: item.key_metrics.gross_margin),
+        _trend_item("operating_margin", trend_base, lambda item: item.key_metrics.operating_margin),
+        _trend_item("net_margin", trend_base, lambda item: item.key_metrics.net_margin),
+    ]
+    working_capital_trends = [
+        _ratio_trend_item("accounts_receivable_to_revenue", trend_base, lambda item: item.financial_snapshot.accounts_receivable, lambda item: item.financial_snapshot.revenue),
+        _ratio_trend_item("inventory_to_revenue", trend_base, lambda item: item.financial_snapshot.inventory, lambda item: item.financial_snapshot.revenue),
+    ]
+    cash_flow_trends = [
+        _trend_item("ocf_to_net_income", trend_base, lambda item: item.key_metrics.ocf_to_net_income),
+        _trend_item("fcf_margin", trend_base, lambda item: item.key_metrics.fcf_margin),
+    ]
+    balance_sheet_trends = [
+        _ratio_trend_item("goodwill_to_assets", trend_base, lambda item: item.financial_snapshot.goodwill, lambda item: item.financial_snapshot.total_assets),
+        _trend_item("debt_to_equity", trend_base, lambda item: item.key_metrics.debt_to_equity),
+        _trend_item("cash_to_debt", trend_base, lambda item: item.key_metrics.cash_to_debt),
+    ]
+    narrative_parts = []
+    for item in [*margin_trends, *working_capital_trends, *cash_flow_trends, *balance_sheet_trends]:
+        if item.direction in {"improving", "deteriorating"}:
+            narrative_parts.append(f"{item.metric} is {item.direction}")
+    narrative = "; ".join(narrative_parts[:5]) or "多期趋势信号不足，需结合原始财报继续核验。"
+    return FinancialTrendAnalysis(
+        periods_covered=periods_covered,
+        margin_trends=margin_trends,
+        working_capital_trends=working_capital_trends,
+        cash_flow_trends=cash_flow_trends,
+        balance_sheet_trends=balance_sheet_trends,
+        narrative=narrative,
+    )
+
+
+def _trend_item(
+    metric: str,
+    periods: list[FinancialPeriodAnalysis],
+    getter: Any,
+) -> FinancialTrendItem:
+    values = [(item.period, getter(item)) for item in periods if getter(item) is not None]
+    if len(values) < 2:
+        return FinancialTrendItem(metric=metric, periods=[str(item.period) for item in periods if item.period], warning="insufficient_period_data")
+    current_period, current = values[0]
+    previous_period, previous = values[1]
+    change = round(current - previous, 6)
+    direction = _trend_direction(metric, change)
+    return FinancialTrendItem(
+        metric=metric,
+        direction=direction,
+        current_value=current,
+        previous_value=previous,
+        change=change,
+        periods=[str(current_period), str(previous_period)],
+    )
+
+
+def _ratio_trend_item(
+    metric: str,
+    periods: list[FinancialPeriodAnalysis],
+    numerator_getter: Any,
+    denominator_getter: Any,
+) -> FinancialTrendItem:
+    values = []
+    for item in periods:
+        ratio = _safe_divide(numerator_getter(item), denominator_getter(item))
+        if ratio is not None:
+            values.append((item.period, round(ratio, 6)))
+    if len(values) < 2:
+        return FinancialTrendItem(metric=metric, periods=[str(item.period) for item in periods if item.period], warning="insufficient_period_data")
+    current_period, current = values[0]
+    previous_period, previous = values[1]
+    change = round(current - previous, 6)
+    direction = _trend_direction(metric, change)
+    return FinancialTrendItem(
+        metric=metric,
+        direction=direction,
+        current_value=current,
+        previous_value=previous,
+        change=change,
+        periods=[str(current_period), str(previous_period)],
+    )
+
+
+def _trend_direction(metric: str, change: float) -> str:
+    if abs(change) < 0.005:
+        return "stable"
+    lower_is_better = {
+        "accounts_receivable_to_revenue",
+        "inventory_to_revenue",
+        "goodwill_to_assets",
+        "debt_to_equity",
+    }
+    if metric in lower_is_better:
+        return "improving" if change < 0 else "deteriorating"
+    return "improving" if change > 0 else "deteriorating"
 
 
 def _build_financial_snapshot(period: dict[str, Any]) -> tuple[FinancialSnapshot, dict[str, float | None]]:
@@ -716,6 +894,7 @@ def _build_financial_snapshot(period: dict[str, Any]) -> tuple[FinancialSnapshot
         total_debt=values.get("total_debt"),
         total_liabilities=values.get("total_liabilities"),
         shareholders_equity=values.get("shareholders_equity"),
+        goodwill=values.get("goodwill"),
         operating_cash_flow=values.get("operating_cash_flow"),
         capital_expenditure=capex_spend,
         free_cash_flow=free_cash_flow,
@@ -906,6 +1085,52 @@ def _build_data_quality(snapshot: FinancialSnapshot, warnings: list[FinancialMet
     return FinancialDataQuality(status=status, missing_fields=missing_fields, confidence=confidence)
 
 
+def _financial_document(period: dict[str, Any]) -> FinancialFilingDocument:
+    document = period.get("document") or {}
+    return FinancialFilingDocument(
+        title=document.get("title"),
+        filing_type=document.get("filing_type"),
+        period=period.get("period"),
+        filed_at=document.get("filed_at"),
+        provider=document.get("provider"),
+        url=document.get("url"),
+    )
+
+
+def _build_filing_coverage(documents: list[dict[str, Any]], parsed_periods: list[dict[str, Any]]) -> FinancialFilingCoverage:
+    period_docs = [_financial_document(item) for item in parsed_periods]
+    annual_count = len([item for item in period_docs if item.filing_type in {"年报", "10-K", "20-F", "40-F"}])
+    interim_count = len([item for item in period_docs if item.filing_type in {"半年报", "一季报", "三季报", "10-Q"}])
+    warnings = []
+    if annual_count < 2:
+        warnings.append("latest_two_annual_reports_not_fully_covered")
+    if not any(item.filing_type == "半年报" for item in period_docs) and not any(item.filing_type == "10-Q" and item.period and item.period.endswith(("Q2", "H1")) for item in period_docs):
+        warnings.append("latest_half_year_report_not_found")
+    if not any(item.filing_type in {"一季报", "三季报", "10-Q"} for item in period_docs):
+        warnings.append("latest_quarterly_report_not_found")
+    if len(period_docs) < 3:
+        warnings.append("less_than_three_financial_reports_parsed")
+
+    if len(period_docs) >= 3 and annual_count >= 2 and not warnings:
+        coverage_status = "complete"
+    elif len(period_docs) >= 2:
+        coverage_status = "partial"
+    else:
+        coverage_status = "insufficient"
+    latest = period_docs[0] if period_docs else None
+    return FinancialFilingCoverage(
+        collected_document_count=len(documents),
+        parsed_period_count=len(parsed_periods),
+        annual_report_count=annual_count,
+        interim_report_count=interim_count,
+        latest_period=latest.period if latest else None,
+        latest_filing_type=latest.filing_type if latest else None,
+        coverage_status=coverage_status,
+        documents=period_docs,
+        warnings=warnings,
+    )
+
+
 def _build_financial_score(metrics: FinancialKeyMetrics, risks: list[FinancialSignal]) -> FinancialScore:
     growth = _score_growth(metrics)
     profitability = _score_profitability(metrics)
@@ -1000,6 +1225,7 @@ def _compat_structured_facts(
         "operating_cash_flow": snapshot.operating_cash_flow,
         "free_cash_flow": snapshot.free_cash_flow,
         "capex": snapshot.capital_expenditure,
+        "goodwill": snapshot.goodwill,
         "key_risks": [item.summary for item in analysis.risks],
         "supporting_filings": [
             {
@@ -1328,20 +1554,29 @@ def _prioritize_cninfo_announcements(
     if not eligible:
         return announcements[:limit]
 
-    selected: list[dict[str, Any]] = [eligible[0][0]]
-    current_type = eligible[0][1]
-    current_year = eligible[0][2]
-    if current_type != "公告" and current_year is not None:
-        for announcement, filing_type, year in eligible[1:]:
-            if filing_type == current_type and year == current_year - 1:
-                selected.append(announcement)
-                break
+    annual = [item for item in eligible if item[1] == "年报"]
+    half_year = [item for item in eligible if item[1] == "半年报"]
+    quarterly = [item for item in eligible if item[1] in {"一季报", "三季报"}]
+    nonannual = [item for item in eligible if item[1] != "年报"]
 
-    for announcement, _, _ in eligible[1:]:
-        if len(selected) >= limit:
-            break
+    selected: list[dict[str, Any]] = []
+
+    def add(item: tuple[dict[str, Any], str, int | None] | None) -> None:
+        if not item or len(selected) >= limit:
+            return
+        announcement = item[0]
         if announcement not in selected:
             selected.append(announcement)
+
+    for item in annual[:2]:
+        add(item)
+    add(half_year[0] if half_year else None)
+    add(quarterly[0] if quarterly else (nonannual[0] if nonannual else None))
+
+    for item in eligible:
+        if len(selected) >= limit:
+            break
+        add(item)
     return selected[:limit]
 
 

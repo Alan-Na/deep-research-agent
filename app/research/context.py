@@ -136,6 +136,7 @@ def _adapt_filing_result(result: AgentResult) -> UnifiedAgentResearch:
     assessment = analysis.get("overall_financial_assessment") or {}
     snapshot = analysis.get("financial_snapshot") or {}
     key_metrics = analysis.get("key_metrics") or {}
+    trend_analysis = analysis.get("trend_analysis") or {}
     findings: list[UnifiedResearchFinding] = []
     summary = assessment.get("summary")
     if summary:
@@ -166,6 +167,9 @@ def _adapt_filing_result(result: AgentResult) -> UnifiedAgentResearch:
         "period": analysis.get("period"),
         "currency": analysis.get("currency"),
         "unit": analysis.get("unit"),
+        "filing_coverage": analysis.get("filing_coverage"),
+        "period_analyses": analysis.get("period_analyses") or [],
+        "trend_analysis": trend_analysis,
         "financial_score": analysis.get("financial_score"),
         "snapshot": _compact_dict(snapshot),
         "key_metrics": _compact_dict(key_metrics),

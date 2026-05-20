@@ -46,6 +46,50 @@ CHAT_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "get_financial_periods",
+            "description": "Read the current company's multi-period filing coverage and per-report financial snapshots. Use for questions about which reports were read, annual/interim coverage, or period-by-period numbers.",
+            "parameters": {
+                "type": "object",
+                "properties": {"focus": {"type": "string", "description": "Optional financial period topic to focus on."}},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_financial_trends",
+            "description": "Read multi-period financial trends such as gross margin trend, receivables/revenue trend, inventory/revenue trend, goodwill/assets trend, cash flow trend, and debt coverage.",
+            "parameters": {
+                "type": "object",
+                "properties": {"focus": {"type": "string", "description": "Optional trend topic to focus on."}},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_financial_risk_flags",
+            "description": "Read financial risk flags and evidence for the current company, including cash-flow mismatch, margin pressure, receivables, inventory, negative FCF, and debt coverage.",
+            "parameters": {
+                "type": "object",
+                "properties": {"focus": {"type": "string", "description": "Optional risk topic to focus on."}},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_financial_data_quality",
+            "description": "Read filing coverage, missing fields, parser confidence, metric warnings, and source documents for the current company's financial analysis.",
+            "parameters": {
+                "type": "object",
+                "properties": {"focus": {"type": "string", "description": "Optional data-quality topic to focus on."}},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_message_signals",
             "description": "Read official website, IR, news events, sentiment, extracted numbers, and message-side signals for the current company only.",
             "parameters": {
@@ -96,10 +140,14 @@ ROUTER_SYSTEM_PROMPT = """
 可用函数接口：
 1. get_market_data: 当前公司的股价、收益率、成交量、波动率、估值。
 2. get_financial_statement_analysis: 当前公司的财报抽取、核心财务指标、财务风险和财务健康评分。
-3. get_message_signals: 当前公司的官网/IR、新闻事件、情绪、关键数字和消息面结论。
-4. get_company_events: 当前公司的结构化事件列表。
-5. get_research_context: 当前公司的完整统一研究上下文文档。
-6. reject_question: 用户问题不是关于当前公司，或要求分析其他公司，或需要当前研究上下文之外的信息。
+3. get_financial_periods: 当前公司实际读取了哪些财报、各报告期三表摘要、最新两份年报/半年报/季报覆盖情况。
+4. get_financial_trends: 当前公司的多期趋势，例如毛利率、经营利润率、应收/收入、存货/收入、商誉/资产、现金流和负债覆盖。
+5. get_financial_risk_flags: 当前公司的财报风险 flag 和证据。
+6. get_financial_data_quality: 当前公司财报抽取缺失字段、metric warnings、覆盖完整度和来源文件。
+7. get_message_signals: 当前公司的官网/IR、新闻事件、情绪、关键数字和消息面结论。
+8. get_company_events: 当前公司的结构化事件列表。
+9. get_research_context: 当前公司的完整统一研究上下文文档。
+10. reject_question: 用户问题不是关于当前公司，或要求分析其他公司，或需要当前研究上下文之外的信息。
 
 规则：
 - 必须输出一个或多个 function call。
@@ -229,6 +277,14 @@ def _heuristic_tool_selection(question: str) -> list[CompanyChatToolCall]:
         calls.append(CompanyChatToolCall(name="get_market_data", arguments={"focus": question}))
     if any(token in normalized for token in ["财报", "利润", "营收", "现金流", "负债", "毛利", "净利", "financial", "revenue", "cash flow"]):
         calls.append(CompanyChatToolCall(name="get_financial_statement_analysis", arguments={"focus": question}))
+    if any(token in normalized for token in ["几份", "哪些财报", "年报", "半年报", "季报", "报告期", "期间", "period", "filing coverage", "annual report"]):
+        calls.append(CompanyChatToolCall(name="get_financial_periods", arguments={"focus": question}))
+    if any(token in normalized for token in ["趋势", "走势", "同比", "环比", "毛利率", "利润率", "应收", "存货", "商誉", "trend", "margin", "receivable", "inventory", "goodwill"]):
+        calls.append(CompanyChatToolCall(name="get_financial_trends", arguments={"focus": question}))
+    if any(token in normalized for token in ["风险", "异常", "flag", "预警", "偿债", "负自由现金流", "回款", "risk"]):
+        calls.append(CompanyChatToolCall(name="get_financial_risk_flags", arguments={"focus": question}))
+    if any(token in normalized for token in ["缺失", "置信", "质量", "来源", "覆盖", "抽取成功", "data quality", "missing", "warning"]):
+        calls.append(CompanyChatToolCall(name="get_financial_data_quality", arguments={"focus": question}))
     if any(token in normalized for token in ["新闻", "消息", "官网", "ir", "事件", "舆情", "情绪", "催化", "风险", "news", "event"]):
         calls.append(CompanyChatToolCall(name="get_message_signals", arguments={"focus": question}))
         calls.append(CompanyChatToolCall(name="get_company_events", arguments={"limit": 8}))
@@ -243,6 +299,14 @@ def _execute_chat_tool(context_response: ResearchContextResponse, call: CompanyC
         return _agent_tool_result(context, "market")
     if call.name == "get_financial_statement_analysis":
         return _agent_tool_result(context, "filing")
+    if call.name == "get_financial_periods":
+        return _financial_tool_result(context, call.name, "periods")
+    if call.name == "get_financial_trends":
+        return _financial_tool_result(context, call.name, "trends")
+    if call.name == "get_financial_risk_flags":
+        return _financial_tool_result(context, call.name, "risks")
+    if call.name == "get_financial_data_quality":
+        return _financial_tool_result(context, call.name, "data_quality")
     if call.name == "get_message_signals":
         return _agent_tool_result(context, "message_intel")
     if call.name == "get_company_events":
@@ -258,6 +322,41 @@ def _execute_chat_tool(context_response: ResearchContextResponse, call: CompanyC
             "cross_agent": context.cross_agent,
         }
     return {"tool": call.name, "error": "unknown_tool"}
+
+
+def _financial_tool_result(context: UnifiedResearchContext, tool_name: str, section: str) -> dict[str, Any]:
+    agent = context.agents.get("filing")
+    if not agent:
+        return {"tool": tool_name, "error": "filing data is unavailable."}
+    metrics = agent.metrics or {}
+    if section == "periods":
+        return {
+            "tool": tool_name,
+            "filing_coverage": metrics.get("filing_coverage") or {},
+            "period_analyses": metrics.get("period_analyses") or [],
+        }
+    if section == "trends":
+        return {
+            "tool": tool_name,
+            "filing_coverage": metrics.get("filing_coverage") or {},
+            "trend_analysis": metrics.get("trend_analysis") or {},
+            "period_analyses": metrics.get("period_analyses") or [],
+        }
+    if section == "risks":
+        return {
+            "tool": tool_name,
+            "financial_risks": [item.model_dump() for item in agent.findings if item.category.startswith("financial_risk:")],
+            "financial_strengths": [item.model_dump() for item in agent.findings if item.category.startswith("financial_strength:")],
+            "financial_score": metrics.get("financial_score") or {},
+            "summary": agent.summary,
+        }
+    return {
+        "tool": tool_name,
+        "data_quality": metrics.get("data_quality") or {},
+        "filing_coverage": metrics.get("filing_coverage") or {},
+        "warnings": agent.warnings,
+        "payload_keys": agent.payload_keys,
+    }
 
 
 def _agent_tool_result(context: UnifiedResearchContext, agent_name: str) -> dict[str, Any]:
@@ -326,6 +425,28 @@ def _heuristic_answer(context: UnifiedResearchContext, question: str, tool_resul
                 lines.append(f"  - {event.get('title')}：{event.get('summary')}")
         elif result.get("research_context_document"):
             lines.append(truncate_text(result["research_context_document"], 900))
+        elif result.get("trend_analysis") is not None:
+            trend = result.get("trend_analysis") or {}
+            lines.append(f"- 根据财报 Agent 多期趋势：{trend.get('narrative') or '趋势信号不足。'}")
+        elif result.get("period_analyses") is not None:
+            coverage = result.get("filing_coverage") or {}
+            lines.append(f"- 根据财报 Agent：已解析 {coverage.get('parsed_period_count', len(result.get('period_analyses') or []))} 个报告期。")
+            for period in (result.get("period_analyses") or [])[:4]:
+                snapshot = period.get("financial_snapshot") or {}
+                lines.append(
+                    f"  {period.get('period') or period.get('filing_type')}: "
+                    f"收入 {snapshot.get('revenue')}, 净利润 {snapshot.get('net_income')}, 经营现金流 {snapshot.get('operating_cash_flow')}"
+                )
+        elif result.get("financial_risks") is not None:
+            risks = result.get("financial_risks") or []
+            if risks:
+                lines.append("- 根据财报 Agent 风险 flag：")
+                for risk in risks[:5]:
+                    lines.append(f"  {risk.get('category')}: {risk.get('summary')}")
+            else:
+                lines.append("- 根据财报 Agent：当前未识别到明确财报风险 flag。")
+        elif result.get("data_quality") is not None:
+            lines.append(f"- 根据财报 Agent 数据质量：{truncate_text(json.dumps(result, ensure_ascii=False, default=str), 700)}")
     lines.append("以上只基于当前研究上下文，不构成买卖建议。")
     return "\n".join(lines)
 
@@ -364,6 +485,20 @@ def _sources_from_tool_results(tool_results: list[dict[str, Any]]) -> list[Compa
                     snippet=truncate_text(str(event.get("summary") or ""), 280),
                     url=source_ids[0] if source_ids else None,
                     date=event.get("date"),
+                )
+            )
+        coverage = result.get("filing_coverage") or {}
+        for document in coverage.get("documents") or []:
+            sources.append(
+                CompanyChatSource(
+                    agent_name="filing",
+                    title=str(document.get("title") or document.get("filing_type") or "financial filing"),
+                    snippet=truncate_text(
+                        f"{document.get('period') or ''} {document.get('filing_type') or ''} filed_at={document.get('filed_at') or ''}",
+                        280,
+                    ),
+                    url=document.get("url"),
+                    date=document.get("filed_at"),
                 )
             )
     deduped: list[CompanyChatSource] = []

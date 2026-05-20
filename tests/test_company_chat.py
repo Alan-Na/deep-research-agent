@@ -49,6 +49,30 @@ def _context_response() -> ResearchContextResponse:
                     "financial_score": {"growth": 3, "profitability": 3, "cash_flow_quality": 3, "balance_sheet": 3, "overall": 3},
                     "financial_snapshot": {"revenue": 1291.31},
                     "key_metrics": {"net_margin": 0.16},
+                    "filing_coverage": {
+                        "parsed_period_count": 4,
+                        "documents": [
+                            {
+                                "title": "宁德时代 2025 一季报",
+                                "filing_type": "一季报",
+                                "period": "2025Q1",
+                                "filed_at": "2025-04-25",
+                                "url": "https://example.com/q1",
+                            }
+                        ],
+                    },
+                    "period_analyses": [
+                        {
+                            "period": "2025Q1",
+                            "filing_type": "一季报",
+                            "financial_snapshot": {"revenue": 1291.31, "net_income": 139.63, "operating_cash_flow": 110.0},
+                        }
+                    ],
+                    "trend_analysis": {
+                        "periods_covered": ["2025Q1", "2024FY", "2023FY"],
+                        "margin_trends": [{"metric": "gross_margin", "direction": "improving", "change": 0.02}],
+                        "narrative": "gross_margin is improving",
+                    },
                 },
             },
         ),
@@ -125,3 +149,17 @@ def test_company_chat_strips_markdown_bold_from_llm_answer(monkeypatch):
 
     assert "**" not in response.answer
     assert "最新价 447.66 元" in response.answer
+
+
+def test_company_chat_financial_trend_tool(monkeypatch):
+    monkeypatch.setattr(company_chat, "is_llm_available", lambda: False)
+
+    response = answer_company_question(
+        _context_response(),
+        CompanyChatRequest(question="财报里毛利率趋势和商誉变化怎么看？"),
+    )
+
+    tool_names = [item.name for item in response.tool_calls]
+    assert "get_financial_trends" in tool_names
+    assert "gross_margin is improving" in response.answer
+    assert response.sources

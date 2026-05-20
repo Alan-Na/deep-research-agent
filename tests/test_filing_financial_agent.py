@@ -4,6 +4,7 @@ from app.agents.filing import (
     _calculate_key_metrics,
     _detect_risks,
     _parse_document_financials,
+    _prioritize_cninfo_announcements,
     _select_financial_pdf_pages,
     filing_agent_definition,
 )
@@ -145,6 +146,27 @@ def test_financial_risk_flags():
     assert next(item for item in risks if item.type == "profit_growth_not_supported_by_cash_flow").severity == "high"
 
 
+def test_cninfo_priority_selects_two_annual_half_and_quarter_reports():
+    brief = ResearchBrief(company_name="Example Corp", market="A_SHARE", query="Example Corp", instrument=InstrumentInfo(symbol="000001"))
+    announcements = [
+        {"secCode": "000001", "announcementTitle": "Example Corp 2025 第一季度报告", "adjunctUrl": "q1.pdf", "announcementTime": 5},
+        {"secCode": "000001", "announcementTitle": "Example Corp 2024 年度报告", "adjunctUrl": "fy2024.pdf", "announcementTime": 4},
+        {"secCode": "000001", "announcementTitle": "Example Corp 2024 半年度报告", "adjunctUrl": "h1.pdf", "announcementTime": 3},
+        {"secCode": "000001", "announcementTitle": "Example Corp 2023 年度报告", "adjunctUrl": "fy2023.pdf", "announcementTime": 2},
+        {"secCode": "000001", "announcementTitle": "Example Corp 2023 半年度报告", "adjunctUrl": "old_h1.pdf", "announcementTime": 1},
+    ]
+
+    selected = _prioritize_cninfo_announcements(announcements, brief, limit=4)
+    titles = [item["announcementTitle"] for item in selected]
+
+    assert titles == [
+        "Example Corp 2024 年度报告",
+        "Example Corp 2023 年度报告",
+        "Example Corp 2024 半年度报告",
+        "Example Corp 2025 第一季度报告",
+    ]
+
+
 def test_filing_agent_runs_full_financial_statement_workflow(monkeypatch):
     def fake_fetch(self, brief, limit=3):
         return [
@@ -159,6 +181,7 @@ def test_filing_agent_runs_full_financial_statement_workflow(monkeypatch):
                 营业收入 12500 毛利 5500 营业利润 2600 归母净利润 1900 基本每股收益 3.20
                 货币资金 8200 应收账款 1400 存货 900 资产总计 25000 总债务 6000 负债合计 10000 所有者权益合计 15000
                 经营活动产生的现金流量净额 2100 购建固定资产、无形资产和其他长期资产支付的现金 600
+                商誉 300
                 """,
             ),
             FilingDocument(
@@ -172,6 +195,33 @@ def test_filing_agent_runs_full_financial_statement_workflow(monkeypatch):
                 营业收入 10000 毛利 4300 营业利润 2200 归母净利润 1700
                 货币资金 7000 应收账款 1200 存货 820 总债务 6500 所有者权益合计 14000
                 经营活动产生的现金流量净额 1800
+                商誉 350
+                """,
+            ),
+            FilingDocument(
+                provider="cninfo",
+                filing_type="半年报",
+                title="Example Corp 2024 半年报",
+                filed_at="2024-08-30",
+                url="https://example.com/h1",
+                text="""
+                单位：百万元
+                营业收入 6000 毛利 2600 营业利润 1200 归母净利润 900
+                货币资金 7600 应收账款 1300 存货 860 资产总计 24000 总债务 6300 负债合计 9800 所有者权益合计 14200 商誉 330
+                经营活动产生的现金流量净额 1000 购建固定资产、无形资产和其他长期资产支付的现金 300
+                """,
+            ),
+            FilingDocument(
+                provider="cninfo",
+                filing_type="一季报",
+                title="Example Corp 2025 第一季度报告",
+                filed_at="2025-04-25",
+                url="https://example.com/q1",
+                text="""
+                单位：百万元
+                营业收入 3200 毛利 1400 营业利润 650 归母净利润 480
+                货币资金 8300 应收账款 1450 存货 920 资产总计 25200 总债务 5900 负债合计 10100 所有者权益合计 15100 商誉 295
+                经营活动产生的现金流量净额 520 购建固定资产、无形资产和其他长期资产支付的现金 160
                 """,
             ),
         ]
@@ -189,8 +239,13 @@ def test_filing_agent_runs_full_financial_statement_workflow(monkeypatch):
     analysis = result.payload["financial_statement_analysis"]
     assert result.agent_name == "filing"
     assert result.tool_calls_count == 5
-    assert analysis["financial_snapshot"]["revenue"] == 12500
-    assert analysis["key_metrics"]["revenue_yoy_growth"] == 0.25
+    assert analysis["period"] == "2025Q1"
+    assert analysis["financial_snapshot"]["revenue"] == 3200
+    assert analysis["filing_coverage"]["parsed_period_count"] == 4
+    assert analysis["filing_coverage"]["annual_report_count"] == 2
+    assert len(analysis["period_analyses"]) == 4
+    assert analysis["trend_analysis"]["balance_sheet_trends"]
+    assert analysis["period_analyses"][1]["key_metrics"]["revenue_yoy_growth"] == 0.25
     assert analysis["financial_score"]["score_interpretation"].startswith("This score reflects financial health")
     assert result.status in {"success", "partial"}
     assert result.key_points
