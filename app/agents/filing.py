@@ -26,7 +26,7 @@ from app.schemas import (
 from app.tools.filing import SecEdgarAdapter
 from app.utils.http import build_headers
 from app.utils.logging import get_logger
-from app.utils.text import normalize_whitespace, truncate_text
+from app.utils.text import normalize_name, normalize_whitespace, truncate_text
 from app.utils.time import utc_now
 
 logger = get_logger(__name__)
@@ -96,6 +96,28 @@ DEBT_COMPONENT_ALIASES = [
     "long-term debt",
     "bonds payable",
     "lease liabilities",
+]
+
+PDF_CONTEXT_LEADING_PAGES = 6
+PDF_TARGET_PAGE_RADIUS = 2
+PDF_FALLBACK_MAX_PAGES = 40
+PDF_MAX_SELECTED_PAGES = 90
+PDF_FINANCIAL_SECTION_KEYWORDS = [
+    "主要会计数据",
+    "主要财务指标",
+    "财务报表",
+    "合并资产负债表",
+    "资产负债表",
+    "合并利润表",
+    "利润表",
+    "合并现金流量表",
+    "现金流量表",
+    "consolidated balance sheets",
+    "consolidated statements of operations",
+    "consolidated statements of income",
+    "consolidated statements of cash flows",
+    "selected financial data",
+    "financial statements",
 ]
 
 
@@ -1156,15 +1178,7 @@ def _extract_document_text(url: str) -> str:
 
     lower_url = url.lower()
     if lower_url.endswith(".pdf") and PdfReader is not None:
-        try:
-            reader = PdfReader(BytesIO(response.content))
-            pages = []
-            for page in reader.pages[:20]:
-                pages.append(page.extract_text() or "")
-            return normalize_whitespace("\n".join(pages))
-        except Exception:
-            logger.exception("Failed to parse PDF disclosure document: %s", url)
-            return ""
+        return _extract_pdf_financial_text(response.content, url)
     if lower_url.endswith(".pdf"):
         logger.warning("PDF disclosure parser dependency is unavailable; cannot extract text from %s", url)
         return ""
@@ -1172,6 +1186,82 @@ def _extract_document_text(url: str) -> str:
         return normalize_whitespace(response.text)
     except Exception:
         return ""
+
+
+def _extract_pdf_financial_text(content: bytes, url: str) -> str:
+    try:
+        reader = PdfReader(BytesIO(content))
+    except Exception:
+        logger.exception("Failed to open PDF disclosure document: %s", url)
+        return ""
+
+    page_texts: list[tuple[int, str]] = []
+    for index, page in enumerate(reader.pages):
+        try:
+            text = normalize_whitespace(page.extract_text() or "")
+        except Exception:
+            logger.debug("Failed to extract text from PDF page %s in %s.", index + 1, url)
+            text = ""
+        if text:
+            page_texts.append((index, text))
+
+    if not page_texts:
+        return ""
+
+    selected_indices = _select_financial_pdf_pages(page_texts, len(reader.pages))
+    if not selected_indices:
+        selected_indices = list(range(min(len(reader.pages), PDF_FALLBACK_MAX_PAGES)))
+        logger.warning(
+            "Could not locate financial statement sections in %s; falling back to first %s pages.",
+            url,
+            len(selected_indices),
+        )
+
+    pages_by_index = {index: text for index, text in page_texts}
+    selected_parts = []
+    for index in selected_indices[:PDF_MAX_SELECTED_PAGES]:
+        text = pages_by_index.get(index)
+        if text:
+            selected_parts.append(f"PDF_PAGE_{index + 1}\n{text}")
+    return normalize_whitespace("\n\n".join(selected_parts))
+
+
+def _select_financial_pdf_pages(page_texts: list[tuple[int, str]], page_count: int) -> list[int]:
+    direct_hits: set[int] = set()
+    contextual_hits: set[int] = set(range(min(PDF_CONTEXT_LEADING_PAGES, page_count)))
+
+    for index, text in page_texts:
+        if _looks_like_financial_section_page(text):
+            direct_hits.add(index)
+            continue
+        if _contains_financial_field_alias(text):
+            direct_hits.add(index)
+
+    for index in direct_hits:
+        for nearby in range(index - PDF_TARGET_PAGE_RADIUS, index + PDF_TARGET_PAGE_RADIUS + 1):
+            if 0 <= nearby < page_count:
+                contextual_hits.add(nearby)
+
+    if not direct_hits:
+        return []
+    return sorted(contextual_hits)
+
+
+def _looks_like_financial_section_page(text: str) -> bool:
+    normalized = normalize_name(text)
+    return any(normalize_name(keyword) in normalized for keyword in PDF_FINANCIAL_SECTION_KEYWORDS)
+
+
+def _contains_financial_field_alias(text: str) -> bool:
+    hit_count = 0
+    for aliases in FIELD_ALIASES.values():
+        for alias in aliases:
+            if _find_alias(text, alias):
+                hit_count += 1
+                break
+        if hit_count >= 3:
+            return True
+    return False
 
 
 def _infer_filing_type(title: str) -> str:

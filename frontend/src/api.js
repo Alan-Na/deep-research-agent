@@ -28,7 +28,9 @@ function normalizeRunStatus(status) {
 
 function stanceToSentiment(stance) {
   const value = (stance || '').toLowerCase()
+  if (value === 'strong_bullish') return 'strong_positive'
   if (value === 'bullish') return 'positive'
+  if (value === 'strong_bearish') return 'strong_negative'
   if (value === 'bearish') return 'negative'
   return 'neutral'
 }

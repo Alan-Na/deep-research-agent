@@ -19,8 +19,13 @@ CRITIC_OUTPUT_SYSTEM_PROMPT = """
 - 只能使用提供的 research brief、agent outputs、events、coverage。
 - 优先使用 unified research context document；它是三个研究 agent 输出的规范化版本。
 - 不要使用外部知识。
-- 必须输出明确 stance: bullish / neutral / bearish。
-- 如果证据偏弱、agent 互相冲突、或关键信号不足，优先输出 neutral。
+- 必须输出明确 stance，且只能是 strong_bullish / bullish / neutral / bearish / strong_bearish。
+- strong_bullish：至少两个独立研究 agent 给出强正面证据，且没有高严重度反向风险。
+- bullish：正面证据明显多于风险，但强度或覆盖度不足以判为 strong_bullish。
+- neutral：多空信号均衡、证据不足、或核心数据缺失导致无法形成方向性判断。
+- bearish：负面证据明显多于正面证据，但尚未形成多源高严重度风险。
+- strong_bearish：至少两个独立来源显示高严重度负面信号，或财务/消息/市场同时转弱。
+- 不要因为存在少量不确定性就默认 neutral；如果证据有清晰方向，使用 bullish 或 bearish，并在 confidence 中体现不确定性。
 - bull_case / bear_case / key_catalysts / key_risks 要简洁、证据导向。
 - valuation_view 只能基于 market agent 提供的 market snapshot。
 """
@@ -130,17 +135,16 @@ def _heuristic_draft(
     events: list[EventItem],
     coverage: dict[str, Any],
 ) -> InvestmentMemoDraft:
-    signal_biases = coverage.get("signal_biases") or {}
-    positive = len([value for value in signal_biases.values() if value == "positive"])
-    negative = len([value for value in signal_biases.values() if value == "negative"])
-    if positive > negative:
-        stance = "bullish"
-    elif negative > positive:
-        stance = "bearish"
-    else:
-        stance = "neutral"
-
-    confidence = min(0.85, 0.35 + (coverage.get("valid_agent_count", 0) * 0.1) + (0.08 if positive != negative else 0.0))
+    stance_score = _stance_score(agent_results, events, coverage)
+    stance = _stance_from_score(stance_score)
+    directional = stance != "neutral"
+    confidence = min(
+        0.92,
+        0.34
+        + (coverage.get("valid_agent_count", 0) * 0.08)
+        + min(abs(stance_score), 2.8) * 0.12
+        + (0.05 if directional else 0.0),
+    )
     market_summary = agent_results.get("market").summary if agent_results.get("market") else "市场信息有限"
     filing_summary = _filing_financial_summary(agent_results.get("filing"))
     message_result = agent_results.get("message_intel") or agent_results.get("news_risk") or agent_results.get("web_intel")
@@ -197,6 +201,74 @@ def _heuristic_draft(
         watch_items=list(dict.fromkeys(watch_items))[:6],
         limitations=limitations[:8],
     )
+
+
+def _stance_score(agent_results: dict[str, Any], events: list[EventItem], coverage: dict[str, Any]) -> float:
+    signal_biases = coverage.get("signal_biases") or {}
+    if not signal_biases:
+        signal_biases = {
+            name: result.payload.get("signal_bias")
+            for name, result in agent_results.items()
+            if getattr(result, "payload", None)
+        }
+
+    weights = {"market": 0.9, "filing": 1.2, "message_intel": 1.0, "news_risk": 0.8, "web_intel": 0.5}
+    score = 0.0
+    for name, bias in signal_biases.items():
+        weight = weights.get(name, 0.7)
+        if bias == "positive":
+            score += weight
+        elif bias == "negative":
+            score -= weight
+
+    filing = agent_results.get("filing")
+    filing_analysis = filing.payload.get("financial_statement_analysis") if filing and filing.payload else None
+    if isinstance(filing_analysis, dict):
+        financial_score = filing_analysis.get("financial_score") or {}
+        overall = financial_score.get("overall")
+        if isinstance(overall, (int, float)):
+            score += {5: 0.75, 4: 0.35, 2: -0.35, 1: -0.75}.get(int(overall), 0.0)
+        risks = filing_analysis.get("risks") or []
+        high_risk_count = len([item for item in risks if isinstance(item, dict) and item.get("severity") == "high"])
+        score -= min(0.9, high_risk_count * 0.45)
+        strengths = filing_analysis.get("strengths") or []
+        score += min(0.45, len(strengths) * 0.2)
+
+    message = agent_results.get("message_intel") or agent_results.get("news_risk") or agent_results.get("web_intel")
+    news_analysis = message.payload.get("news_signal_analysis") if message and message.payload else None
+    if isinstance(news_analysis, dict):
+        for item in (news_analysis.get("events") or [])[:8]:
+            if not isinstance(item, dict):
+                continue
+            sentiment = item.get("sentiment")
+            sentiment_score = float(item.get("sentiment_score") or 0.0)
+            duplicate_count = int(item.get("duplicate_count") or 1)
+            event_weight = 0.12 + min(0.16, duplicate_count * 0.03) + min(0.12, sentiment_score * 0.12)
+            if sentiment == "positive":
+                score += event_weight
+            elif sentiment == "negative":
+                score -= event_weight
+
+    for event in events[:8]:
+        event_weight = 0.12 + min(0.28, float(event.impact_score or 0.0) * 0.28)
+        if event.sentiment == "positive":
+            score += event_weight
+        elif event.sentiment == "negative":
+            score -= event_weight
+
+    return round(score, 4)
+
+
+def _stance_from_score(score: float) -> StanceName:
+    if score >= 2.0:
+        return "strong_bullish"
+    if score >= 0.65:
+        return "bullish"
+    if score <= -2.0:
+        return "strong_bearish"
+    if score <= -0.65:
+        return "bearish"
+    return "neutral"
 
 
 def _market_snapshot_from_agent(agent_result: Any) -> MarketSnapshot | None:

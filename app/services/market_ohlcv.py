@@ -61,7 +61,7 @@ def load_or_refresh_ohlcv(
     cache_status = "hit"
     fetched_rows = 0
     if needs_refresh:
-        refresh_start = _compute_refresh_start(latest_cached_date, lookback_days)
+        refresh_start = _compute_refresh_start(latest_cached_date, lookback_days, cached_count=len(cached_frame))
         try:
             fetched_frame = _fetch_provider_history(symbol=symbol, market=market, start_date=refresh_start, adjustment=adjustment)
             if not fetched_frame.empty:
@@ -137,9 +137,13 @@ def _default_adjustment(market: MarketName) -> str:
     return "qfq" if market == "A_SHARE" else "raw"
 
 
-def _compute_refresh_start(latest_cached_date: date | None, lookback_days: int) -> date:
-    if latest_cached_date is None:
-        return datetime.now(timezone.utc).date() - timedelta(days=max(lookback_days * 2, 60))
+def _compute_refresh_start(latest_cached_date: date | None, lookback_days: int, cached_count: int = 0) -> date:
+    today = datetime.now(timezone.utc).date()
+    full_window_start = today - timedelta(days=max(lookback_days * 2, 60))
+    if latest_cached_date is None or cached_count < lookback_days:
+        return full_window_start
+    if latest_cached_date < full_window_start:
+        return full_window_start
     return latest_cached_date - timedelta(days=10)
 
 
@@ -164,6 +168,7 @@ def _load_cached_frame(*, symbol: str, market: MarketName, adjustment: str, look
             .order_by(MarketOhlcvRecord.trade_date.asc())
         ).all()
 
+    rows = [row for row in rows if row.trade_date and row.trade_date.year >= 1990]
     if not rows:
         return pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume", "amount"])
 
@@ -256,6 +261,10 @@ def _normalize_history_frame(frame: pd.DataFrame | None) -> pd.DataFrame:
     date_series = None
     if "日期" in normalized.columns:
         date_series = pd.to_datetime(normalized["日期"], errors="coerce")
+    elif "date" in normalized.columns:
+        date_series = pd.to_datetime(normalized["date"], errors="coerce")
+    elif "trade_date" in normalized.columns:
+        date_series = pd.to_datetime(normalized["trade_date"], errors="coerce")
     elif "Date" in normalized.columns:
         date_series = pd.to_datetime(normalized["Date"], errors="coerce")
     else:

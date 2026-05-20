@@ -209,15 +209,15 @@ def _load_price_history(
             three_month_pct=_pct_change(closes, 66),
         ),
         volume=VolumeSnapshot(
-            latest=float(history[volume_col].iloc[-1]) if volume_col else None,
-            average_20d=float(history[volume_col].tail(min(20, len(history))).mean()) if volume_col else None,
+            latest=_clean_float(history[volume_col].iloc[-1]) if volume_col else None,
+            average_20d=_clean_float(history[volume_col].tail(min(20, len(history))).mean()) if volume_col else None,
         ),
         volatility=VolatilitySnapshot(
-            realized_20d_pct=round(float(returns.tail(min(20, len(returns))).std() * (252 ** 0.5) * 100), 2)
+            realized_20d_pct=_round_clean_float(returns.tail(min(20, len(returns))).std() * (252 ** 0.5) * 100, 2)
             if not returns.empty
             else None,
-            high_52w=round(float(history[high_col].tail(min(252, len(history))).max()), 4) if high_col else None,
-            low_52w=round(float(history[low_col].tail(min(252, len(history))).min()), 4) if low_col else None,
+            high_52w=_round_clean_float(history[high_col].tail(min(252, len(history))).max(), 4) if high_col else None,
+            low_52w=_round_clean_float(history[low_col].tail(min(252, len(history))).min(), 4) if low_col else None,
         ),
         as_of=str(history.iloc[-1].get("date") or history.index[-1])[:10],
         provider="market-data-mcp",
@@ -258,7 +258,18 @@ def _load_company_profile(
     instrument = InstrumentInfo.model_validate(scratchpad.get("payload", {}).get("instrument") or brief.instrument.model_dump())
     if not instrument.symbol:
         return {"summary": "Skipped company profile because instrument symbol is unavailable."}
-    profile = transport.get_company_profile(instrument.symbol, instrument.market)
+    try:
+        profile = transport.get_company_profile(instrument.symbol, instrument.market)
+    except Exception as exc:
+        logger.warning("Company profile provider failed for %s: %s", instrument.symbol, exc)
+        return {
+            "summary": "Company profile lookup was skipped because the upstream provider was unavailable.",
+            "payload": {
+                "provider_warnings": [
+                    f"Company profile provider unavailable; price history remains usable. {_friendly_provider_error(exc)}"
+                ]
+            },
+        }
     if not profile:
         return {"summary": "Company profile lookup returned no extra metadata."}
     notes = []
@@ -292,7 +303,20 @@ def _load_financial_snapshot(
     instrument = InstrumentInfo.model_validate(scratchpad.get("payload", {}).get("instrument") or brief.instrument.model_dump())
     if not instrument.symbol:
         return {"summary": "Skipped financial snapshot because instrument symbol is unavailable."}
-    financials = transport.get_financial_snapshot(instrument.symbol, instrument.market)
+    try:
+        financials = transport.get_financial_snapshot(instrument.symbol, instrument.market)
+    except Exception as exc:
+        logger.warning("Financial snapshot provider failed for %s: %s", instrument.symbol, exc)
+        existing_warnings = list(scratchpad.get("payload", {}).get("provider_warnings") or [])
+        return {
+            "summary": "Financial snapshot lookup was skipped because the upstream provider was unavailable.",
+            "payload": {
+                "provider_warnings": [
+                    *existing_warnings,
+                    f"Financial snapshot provider unavailable; valuation fields may be incomplete. {_friendly_provider_error(exc)}",
+                ]
+            },
+        }
     if not financials:
         return {"summary": "Financial snapshot returned no data."}
     market_snapshot = MarketSnapshot.model_validate(
@@ -347,6 +371,7 @@ def _finalize_market_agent(
         )
     profile = payload.get("profile") or {}
     financials = payload.get("financial_snapshot") or {}
+    provider_warnings = list(dict.fromkeys(payload.get("provider_warnings") or []))
 
     if profile.get("industry") or profile.get("listed_at"):
         instrument = instrument.model_copy(
@@ -386,6 +411,8 @@ def _finalize_market_agent(
     warning = None
     if market_snapshot.valuation.pe_ttm is None and market_snapshot.valuation.pb is None:
         warning = "Valuation snapshot is incomplete; the agent fell back to partial market evidence."
+    if provider_warnings:
+        warning = f"{warning + ' ' if warning else ''}{' '.join(provider_warnings[:2])}"
     if scratchpad.get("errors"):
         status = "partial"
         error_warning = " | ".join(str(item) for item in scratchpad["errors"][:2])
@@ -397,6 +424,7 @@ def _finalize_market_agent(
             "market_snapshot": market_snapshot.model_dump(),
             "signal_bias": signal,
             "financial_snapshot": financials,
+            "provider_warnings": provider_warnings,
         }
     )
     return AgentResult(
@@ -433,7 +461,7 @@ def _pct_change(series: pd.Series, periods: int) -> float | None:
 
 def _to_float(value: Any) -> float | None:
     try:
-        if value in {"", None, "nan"}:
+        if value in {"", None, "nan"} or pd.isna(value):
             return None
         return float(value)
     except Exception:
@@ -445,3 +473,29 @@ def _to_date(value: Any) -> str | None:
     if len(raw) == 8 and raw.isdigit():
         return f"{raw[:4]}-{raw[4:6]}-{raw[6:]}"
     return raw or None
+
+
+def _friendly_provider_error(exc: Exception) -> str:
+    text = str(exc)
+    lowered = text.lower()
+    if "proxy" in lowered:
+        return "Reason: proxy/network connection failed."
+    if "timeout" in lowered or "timed out" in lowered:
+        return "Reason: provider request timed out."
+    if "connection" in lowered or "remote end closed" in lowered:
+        return "Reason: provider connection was closed."
+    return "Reason: upstream provider request failed."
+
+
+def _clean_float(value: Any) -> float | None:
+    try:
+        if value is None or pd.isna(value):
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _round_clean_float(value: Any, digits: int) -> float | None:
+    cleaned = _clean_float(value)
+    return round(cleaned, digits) if cleaned is not None else None

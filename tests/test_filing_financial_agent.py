@@ -4,6 +4,7 @@ from app.agents.filing import (
     _calculate_key_metrics,
     _detect_risks,
     _parse_document_financials,
+    _select_financial_pdf_pages,
     filing_agent_definition,
 )
 from app.agents.runtime import execute_react_agent
@@ -45,6 +46,34 @@ def test_financial_parser_aliases_units_and_negative_capex():
     assert parsed["income_statement"]["gross_profit"] == 5500
     assert parsed["balance_sheet"]["cash_and_equivalents"] == 8200
     assert parsed["cash_flow_statement"]["capital_expenditure"] == -600
+
+
+def test_pdf_page_selection_locates_financial_sections_beyond_first_twenty_pages():
+    page_texts = [(index, f"普通章节内容 第 {index + 1} 页") for index in range(80)]
+    page_texts[52] = (
+        52,
+        """
+        合并资产负债表
+        货币资金 8200 应收账款 1400 存货 900
+        资产总计 25000 负债合计 10000 所有者权益合计 15000
+        """,
+    )
+    page_texts[58] = (
+        58,
+        """
+        合并现金流量表
+        经营活动产生的现金流量净额 2100
+        购建固定资产、无形资产和其他长期资产支付的现金 600
+        """,
+    )
+
+    selected = _select_financial_pdf_pages(page_texts, page_count=80)
+
+    assert 52 in selected
+    assert 58 in selected
+    assert 50 in selected
+    assert 60 in selected
+    assert 79 not in selected
 
 
 def test_financial_calculator_handles_zero_negative_and_missing_values():

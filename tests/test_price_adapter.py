@@ -65,3 +65,31 @@ def test_akshare_resolve_handles_full_company_name_for_seed(monkeypatch):
     assert instrument is not None
     assert instrument.symbol == "sh603629"
     assert instrument.display_name == "利通电子"
+
+
+def test_akshare_resolve_falls_back_to_spot_snapshot(monkeypatch):
+    class SpotAkshare:
+        def stock_info_a_code_name(self):
+            raise RuntimeError("full mapping unavailable")
+
+        def stock_info_sz_name_code(self):
+            return pd.DataFrame()
+
+        def stock_info_sh_name_code(self):
+            raise RuntimeError("sh mapping unavailable")
+
+        def stock_zh_a_spot(self):
+            return pd.DataFrame(
+                [
+                    {"代码": "sh603986", "名称": "兆易创新"},
+                    {"代码": "sz300750", "名称": "宁德时代"},
+                ]
+            )
+
+    monkeypatch.setattr(price, "ak", SpotAkshare())
+
+    instrument = AksharePriceAdapter().resolve("兆易创新")
+
+    assert instrument is not None
+    assert instrument.symbol == "sh603986"
+    assert instrument.display_name == "兆易创新"

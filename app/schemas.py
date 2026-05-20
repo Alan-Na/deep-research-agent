@@ -8,7 +8,7 @@ MarketName = Literal["A_SHARE", "US", "UNKNOWN"]
 SentimentName = Literal["positive", "neutral", "negative"]
 AgentStatus = Literal["success", "partial", "skipped", "failed"]
 JobStatus = Literal["queued", "running", "partial", "succeeded", "failed"]
-StanceName = Literal["bullish", "neutral", "bearish"]
+StanceName = Literal["strong_bullish", "bullish", "neutral", "bearish", "strong_bearish"]
 EventCategory = Literal[
     "earnings",
     "product_release",

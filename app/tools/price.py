@@ -40,6 +40,7 @@ A_SHARE_SEED_INSTRUMENTS = {
     "工业富联": ("601138", "工业富联"),
     "寒武纪": ("688256", "寒武纪"),
     "利通电子": ("603629", "利通电子"),
+    "兆易创新": ("603986", "兆易创新"),
 }
 
 
@@ -102,7 +103,7 @@ class AksharePriceAdapter(PriceDataAdapter):
 
         mapping_df = _load_a_share_name_code_mapping()
         if mapping_df is None or mapping_df.empty:
-            return None
+            return _resolve_a_share_from_spot(company_name)
 
         possible_name_cols = [col for col in mapping_df.columns if "name" in str(col).lower() or "名称" in str(col)]
         possible_code_cols = [col for col in mapping_df.columns if "code" in str(col).lower() or "代码" in str(col)]
@@ -126,7 +127,7 @@ class AksharePriceAdapter(PriceDataAdapter):
                 best_row = row
 
         if best_row is None:
-            return None
+            return _resolve_a_share_from_spot(company_name)
 
         raw_code = str(best_row[code_col]).zfill(6)
         symbol = f"sh{raw_code}" if raw_code.startswith(("5", "6", "9")) else f"sz{raw_code}"
@@ -202,6 +203,55 @@ def _load_a_share_name_code_mapping() -> pd.DataFrame | None:
     if not frames:
         return None
     return pd.concat(frames, ignore_index=True, sort=False)
+
+
+def _resolve_a_share_from_spot(company_name: str) -> ResolvedInstrument | None:
+    if ak is None:
+        return None
+    loader = getattr(ak, "stock_zh_a_spot", None)
+    if loader is None:
+        return None
+    try:
+        frame = loader()
+    except Exception as exc:
+        logger.warning("A-share spot fallback failed: %s", exc)
+        return None
+    if frame is None or frame.empty:
+        return None
+
+    possible_name_cols = [col for col in frame.columns if "name" in str(col).lower() or "名称" in str(col)]
+    possible_code_cols = [col for col in frame.columns if "code" in str(col).lower() or "代码" in str(col)]
+    if not possible_name_cols or not possible_code_cols:
+        return None
+
+    name_col = possible_name_cols[0]
+    code_col = possible_code_cols[0]
+    target = normalize_name(company_name)
+    best_row = None
+    for _, row in frame.iterrows():
+        current_name = normalize_name(str(row[name_col]))
+        if current_name == target:
+            best_row = row
+            break
+        if target and (target in current_name or current_name in target):
+            best_row = row
+
+    if best_row is None:
+        return None
+
+    raw_code = str(best_row[code_col]).strip()
+    if raw_code.startswith(("sh", "sz")):
+        symbol = raw_code
+        code = raw_code[2:]
+    else:
+        code = raw_code.zfill(6)
+        symbol = f"sh{code}" if code.startswith(("5", "6", "9")) else f"sz{code}"
+    return ResolvedInstrument(
+        symbol=symbol,
+        display_name=str(best_row[name_col]),
+        market="A_SHARE",
+        exchange="A_SHARE",
+    )
 
 
 def _detect_close_column(df: pd.DataFrame) -> str:

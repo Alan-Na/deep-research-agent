@@ -212,21 +212,36 @@ def bind_citations_to_memo(
         }
     )
     if not critic_summary.stance_supported and updated_memo.stance != "neutral":
+        downgraded_stance = _downgrade_stance(updated_memo.stance, critic_summary.warnings)
+        cap = 0.45 if downgraded_stance == "neutral" else 0.55
         updated_memo = updated_memo.model_copy(
             update={
-                "stance": "neutral",
-                "stance_confidence": min(updated_memo.stance_confidence, 0.45),
+                "stance": downgraded_stance,
+                "stance_confidence": min(updated_memo.stance_confidence, cap),
                 "limitations": list(
                     dict.fromkeys(
                         [
                             *updated_memo.limitations,
-                            "Critic downgraded the stance to neutral because evidence support was not strong enough.",
+                            "Critic reduced stance confidence because citation coverage or freshness was not strong enough.",
                         ]
                     )
                 )[:10],
             }
         )
     return updated_memo
+
+
+def _downgrade_stance(stance: str, warnings: list[str]) -> str:
+    warning_text = " ".join(warnings)
+    if stance in {"strong_bullish", "bullish"} and "bearish signals outweigh bullish signals" in warning_text:
+        return "neutral"
+    if stance in {"strong_bearish", "bearish"} and "bullish signals outweigh bearish signals" in warning_text:
+        return "neutral"
+    if stance == "strong_bullish":
+        return "bullish"
+    if stance == "strong_bearish":
+        return "bearish"
+    return stance
 
 
 def evaluate_memo(
@@ -266,10 +281,10 @@ def evaluate_memo(
         and bool(coverage.get("has_recent_evidence"))
     )
 
-    if memo.stance == "bullish" and negative > positive:
+    if memo.stance in {"strong_bullish", "bullish"} and negative > positive:
         stance_supported = False
         warnings.append("Critic warning: bearish signals outweigh bullish signals, so a bullish stance is not supported.")
-    if memo.stance == "bearish" and positive > negative:
+    if memo.stance in {"strong_bearish", "bearish"} and positive > negative:
         stance_supported = False
         warnings.append("Critic warning: bullish signals outweigh bearish signals, so a bearish stance is not supported.")
 

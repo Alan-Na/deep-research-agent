@@ -146,3 +146,45 @@ def test_critic_output_persists_unified_context_for_dialogue(monkeypatch):
     assert memo.llm_context_document.startswith("# Unified Company Research Context")
     assert "unified_research" in memo.agent_outputs["market"]
     assert memo.agent_outputs["message_intel"]["unified_research"]["findings"]
+
+
+def test_critic_output_heuristic_uses_five_level_stance():
+    brief = ResearchBrief(
+        company_name="贵州茅台",
+        market="A_SHARE",
+        query="贵州茅台",
+        instrument=InstrumentInfo(symbol="600519", display_name="贵州茅台", market="A_SHARE"),
+    )
+
+    draft = critic_output._heuristic_draft(
+        brief=brief,
+        agent_results=_agent_results(),
+        events=[],
+        coverage={"valid_agent_count": 3, "warnings": []},
+    )
+
+    assert draft.stance == "strong_bullish"
+    assert draft.stance_confidence > 0.55
+
+
+def test_critic_output_heuristic_keeps_mild_direction_for_single_agent_signal():
+    brief = ResearchBrief(company_name="测试公司", market="A_SHARE", query="测试公司")
+    agent_results = {
+        "market": AgentResult(
+            agent_name="market",
+            applicable=True,
+            status="success",
+            summary="市场走势偏弱。",
+            key_points=["近一月收益 -12%"],
+            payload={"signal_bias": "negative"},
+        )
+    }
+
+    draft = critic_output._heuristic_draft(
+        brief=brief,
+        agent_results=agent_results,
+        events=[],
+        coverage={"valid_agent_count": 1, "warnings": []},
+    )
+
+    assert draft.stance == "bearish"

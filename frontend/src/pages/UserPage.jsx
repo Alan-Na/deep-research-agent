@@ -11,9 +11,11 @@ const COPY = {
       { key: 'critic_output', label: 'Writing the investment memo' },
     ],
     sentiments: {
-      positive: 'Positive Outlook',
-      negative: 'Negative Outlook',
-      neutral: 'Neutral Outlook',
+      strong_positive: 'Strong Positive',
+      positive: 'Moderately Positive',
+      neutral: 'Neutral / Mixed',
+      negative: 'Moderately Negative',
+      strong_negative: 'Strong Negative',
       mixed: 'Mixed Signals',
     },
     researching: 'Researching…',
@@ -65,9 +67,11 @@ const COPY = {
       { key: 'critic_output', label: '撰写投资研究备忘录' },
     ],
     sentiments: {
-      positive: '偏积极',
-      negative: '偏消极',
-      neutral: '中性判断',
+      strong_positive: '明显偏积极',
+      positive: '略偏积极',
+      neutral: '中性/多空均衡',
+      negative: '略偏消极',
+      strong_negative: '明显偏消极',
       mixed: '多空交织',
     },
     researching: '正在研究中…',
@@ -205,9 +209,11 @@ function Spinner({ size = 16 }) {
 function SentimentBadge({ sentiment, copy }) {
   const labels = copy.sentiments
   const cfgMap = {
+    strong_positive: { label: labels.strong_positive, bg: '#dff3e7', color: '#0b4f2b', dot: '#0f7a3a' },
     positive: { label: labels.positive, bg: 'var(--positive-bg)', color: 'var(--positive)', dot: '#1a6b45' },
-    negative: { label: labels.negative, bg: 'var(--negative-bg)', color: 'var(--negative)', dot: '#9b2335' },
     neutral: { label: labels.neutral, bg: 'var(--neutral-bg)', color: 'var(--neutral)', dot: '#4a4d62' },
+    negative: { label: labels.negative, bg: 'var(--negative-bg)', color: 'var(--negative)', dot: '#9b2335' },
+    strong_negative: { label: labels.strong_negative, bg: '#f8dfe3', color: '#7b1726', dot: '#c21f3a' },
     mixed: { label: labels.mixed, bg: 'var(--amber-bg)', color: 'var(--amber)', dot: '#8a5c1a' },
   }
   const cfg = cfgMap[sentiment] || cfgMap.neutral
